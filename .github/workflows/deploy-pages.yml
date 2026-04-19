@@ -1,6 +1,6 @@
-# Публикует сайт на GitHub Pages БЕЗ пароля в терминале (сборка в облаке GitHub).
-# Настройка один раз: репозиторий → Settings → Pages → Source: GitHub Actions.
-name: Publish GitHub Pages
+# Публикация на GitHub Pages (Settings → Pages → Source: GitHub Actions).
+# В артефакт попадает только папка dist после vite build — там index.html и assets/.
+name: Deploy GitHub Pages
 
 on:
   push:
@@ -27,6 +27,7 @@ jobs:
           cache: 'npm'
       - run: npm ci
       - run: npm run build
+      # Корень сайта на Pages = содержимое dist (index.html + assets/)
       - uses: actions/upload-pages-artifact@v3
         with:
           path: dist
