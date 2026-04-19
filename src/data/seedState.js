@@ -4,6 +4,39 @@ function uid(prefix) {
   return `${prefix}-${Math.random().toString(36).slice(2, 10)}`;
 }
 
+/** Снимок «бизнес-данных» без цепочки бэкапов (для копий перед импортом) */
+export function coreDataFromState(s) {
+  return {
+    version: s.version,
+    catalog: structuredClone(s.catalog || []),
+    months: structuredClone(s.months || {}),
+    payroll: structuredClone(s.payroll || []),
+    rent: structuredClone(s.rent || []),
+    expenseLines: structuredClone(s.expenseLines || []),
+    dataSource: structuredClone(s.dataSource || defaultDataSource()),
+    integrations: structuredClone(s.integrations || defaultIntegrations()),
+  };
+}
+
+export function defaultDataSource() {
+  return {
+    kind: 'demo',
+    format: null,
+    label: 'Демо-данные',
+    fileName: null,
+    updatedAt: new Date().toISOString(),
+  };
+}
+
+export function defaultIntegrations() {
+  return {
+    googleSheetsApiKey: '',
+    moiskladApiKey: '',
+    crmApiKey: '',
+    oneCNotes: '',
+  };
+}
+
 /** Начальное состояние учёта из демо-периодов */
 export function createSeedState() {
   const catalog = [
@@ -67,11 +100,14 @@ export function createSeedState() {
   }
 
   return {
-    version: 3,
+    version: 4,
     catalog,
     months,
     payroll,
     rent,
     expenseLines,
+    dataSource: defaultDataSource(),
+    integrations: defaultIntegrations(),
+    preImportBackups: [],
   };
 }

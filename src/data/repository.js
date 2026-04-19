@@ -1,7 +1,7 @@
 /**
- * Слой данных (Data Layer): сейчас — localStorage.
- * В будущем можно заменить реализацию на Google Sheets API, 1С OData и т.д.,
- * сохранив контракт методов для UI.
+ * Слой данных (Data Layer): единый источник — localStorage в этом браузере.
+ * Импорт и бэкапы перед импортом вызываются из UI (Data Hub), затем patchState → persist.
+ * В будущем: Google Sheets API, 1С OData и т.д. — тот же контракт методов.
  */
 import { getState, patchState, persist, loadFromStorage } from '../state.js';
 import { applyImportRows } from './importApply.js';

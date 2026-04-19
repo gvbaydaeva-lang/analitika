@@ -1,5 +1,17 @@
 import Chart from 'chart.js/auto';
-import { getState, patchState, subscribe, loadFromStorage, resetToDemo, persist, STORAGE_KEY } from './state.js';
+import {
+  getState,
+  patchState,
+  subscribe,
+  loadFromStorage,
+  resetToDemo,
+  persist,
+  STORAGE_KEY,
+  reloadStateFromDisk,
+  pushPreImportBackup,
+  restorePreImportBackup,
+  setDataSourceMeta,
+} from './state.js';
 import {
   computeWithPrev,
   computeMonth,
@@ -195,7 +207,65 @@ function renderPeriodHeader() {
   const { y, m } = getYM();
   document.getElementById('periodTitle').textContent = `${MONTH_NAMES[m - 1]} ${y}`;
   document.getElementById('periodSubtitle').textContent =
-    `Фильтр периода: ${MONTH_NAMES[m - 1]} ${y}. Дашборд, продажи, расходы и колонки «за месяц» в справочнике считаются только за этот месяц. Данные сохраняются в браузере (localStorage).`;
+    `Период: ${MONTH_NAMES[m - 1]} ${y}. Показатели считаются из единого источника (данные в этом браузере). Редактирование — только в «Интеграции и загрузка».`;
+}
+
+const HUB_UNLOCK_KEY = 'profitDataHubUnlock';
+
+function isHubUnlocked() {
+  return sessionStorage.getItem(HUB_UNLOCK_KEY) === '1';
+}
+
+function updateHubLockUi() {
+  const on = isHubUnlocked();
+  document.querySelectorAll('.hub-guard').forEach((el) => {
+    el.classList.toggle('hidden', !on);
+  });
+  const badge = document.getElementById('hubLockBadge');
+  if (badge) badge.textContent = on ? 'Режим редактирования' : 'Заблокировано';
+}
+
+function formatSourceDate(iso) {
+  if (!iso) return '—';
+  try {
+    return new Intl.DateTimeFormat('ru-RU', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(iso));
+  } catch {
+    return String(iso);
+  }
+}
+
+function sourceIconSvg(kind, format) {
+  const k = `${kind || ''}:${format || ''}`.toLowerCase();
+  if (k.includes('1c') || kind === '1c')
+    return '<span class="inline-flex h-9 w-9 items-center justify-center rounded-lg bg-violet-100 text-violet-800 text-xs font-bold" title="1С">1С</span>';
+  if (k.includes('moisklad') || kind === 'moisklad')
+    return '<span class="inline-flex h-9 w-9 items-center justify-center rounded-lg bg-sky-100 text-sky-800 text-xs font-bold" title="МойСклад">МС</span>';
+  if (k.includes('csv') || format === 'csv')
+    return '<span class="inline-flex h-9 w-9 items-center justify-center rounded-lg bg-slate-200 text-slate-800 text-xs font-bold" title="CSV">CSV</span>';
+  if (k.includes('excel') || kind === 'file' || kind === 'excel')
+    return '<span class="inline-flex h-9 w-9 items-center justify-center rounded-lg bg-emerald-100 text-emerald-800 text-xs font-bold" title="Таблица">XLS</span>';
+  if (kind === 'demo')
+    return '<span class="inline-flex h-9 w-9 items-center justify-center rounded-lg bg-amber-100 text-amber-900 text-xs font-bold" title="Демо">★</span>';
+  return '<span class="inline-flex h-9 w-9 items-center justify-center rounded-lg bg-slate-100 text-slate-600 text-xs font-bold" title="Локально">●</span>';
+}
+
+function renderDataSourceStrip(state) {
+  const el = document.getElementById('dashboardSourceStrip');
+  if (!el) return;
+  const ds = state.dataSource || {};
+  const label = escapeHtml(ds.label || 'Локальные данные');
+  const when = formatSourceDate(ds.updatedAt);
+  const icon = sourceIconSvg(ds.kind, ds.format);
+  el.innerHTML = `
+    <div class="flex items-center gap-3 min-w-0">${icon}
+      <div class="min-w-0">
+        <p class="font-semibold text-ink">Источник данных</p>
+        <p class="text-xs text-muted truncate">${label}</p>
+      </div>
+    </div>
+    <div class="text-sm text-muted sm:ml-auto">
+      Данные актуальны на <span class="font-medium text-ink">${when}</span>
+    </div>`;
 }
 
 function renderInventoryKpis(data) {
@@ -242,7 +312,7 @@ function renderOverview(data) {
     {
       title: 'ФОТ и аренда',
       summary: `${money(data.payrollTotal)} ФОТ · ${money(data.rentTotal)} аренда`,
-      body: 'Суммы из вкладки «Расходы и команда» — учитываются каждый месяц.',
+      body: 'Суммы из раздела расходов (единый источник) — учитываются каждый месяц.',
     },
     {
       title: 'Чистая прибыль',
@@ -321,33 +391,29 @@ function renderDashboard(state) {
   const { y, m } = getYM();
   const data = computeWithPrev(state, y, m);
   renderPeriodHeader();
+  renderDataSourceStrip(state);
   renderOverview(data);
   renderKpis(data);
   renderInventoryKpis(data);
   updateCharts(state);
 }
 
-function renderSales(state) {
-  const { y, m } = getYM();
-  const key = periodKey(y, m);
-  const data = computeWithPrev(state, y, m);
-  renderPeriodHeader();
-
+function renderSalesTableRows(state, key, readOnly) {
   const merged = getMergedSales(state, key);
-
-  const tbody = document.getElementById('salesQtyBody');
-  if (tbody) {
-    tbody.innerHTML = merged
-      .map((line) => {
-        const p = state.catalog.find((c) => c.id === line.catalogId);
-        if (!p) return '';
-        const qty = Number(line.qty) || 0;
-        const stock = Math.max(0, Math.floor(Number(p.stockQty) || 0));
-        const stCost = stock * (Number(p.purchase) || 0);
-        const stRet = stock * (Number(p.retail) || 0);
-        return `<tr class="border-t border-slate-100">
+  return merged
+    .map((line) => {
+      const p = state.catalog.find((c) => c.id === line.catalogId);
+      if (!p) return '';
+      const qty = Number(line.qty) || 0;
+      const stock = Math.max(0, Math.floor(Number(p.stockQty) || 0));
+      const stCost = stock * (Number(p.purchase) || 0);
+      const stRet = stock * (Number(p.retail) || 0);
+      const qtyCell = readOnly
+        ? `<td class="p-3 font-medium">${qty}</td>`
+        : `<td class="p-3"><input type="number" min="0" step="1" data-sale-qty data-catalog-id="${p.id}" value="${qty}" class="w-24 rounded-lg border border-slate-200 px-2 py-1 text-sm" /></td>`;
+      return `<tr class="border-t border-slate-100">
         <td class="p-3 font-medium">${escapeHtml(p.name)}</td>
-        <td class="p-3"><input type="number" min="0" step="1" data-sale-qty data-catalog-id="${p.id}" value="${qty}" class="w-24 rounded-lg border border-slate-200 px-2 py-1 text-sm" /></td>
+        ${qtyCell}
         <td class="p-3 font-medium">${money(qty * p.retail)}</td>
         <td class="p-3">${money(p.retail)}</td>
         <td class="p-3">${money(p.purchase)}</td>
@@ -356,22 +422,24 @@ function renderSales(state) {
         <td class="p-3">${money(stCost)}</td>
         <td class="p-3">${money(stRet)}</td>
       </tr>`;
-      })
-      .join('');
-  }
+    })
+    .join('');
+}
 
-  const ordersInput = document.getElementById('inputOrders');
-  if (ordersInput) {
-    const month = ensureMonth(state, key);
-    ordersInput.value = month.orders ?? data.orders;
-  }
-
-  const chBody = document.getElementById('channelsEditBody');
-  if (chBody) {
-    chBody.innerHTML = (data.channels || [])
-      .map(
-        (c, idx) => `
-      <tr class="border-t border-slate-100" data-ch-idx="${idx}">
+function renderChannelsRows(data, readOnly) {
+  return (data.channels || [])
+    .map(
+      (c, idx) =>
+        readOnly
+          ? `<tr class="border-t border-slate-100">
+        <td class="p-2 font-medium">${escapeHtml(c.name)}</td>
+        <td class="p-2">${money(c.revenue)}</td>
+        <td class="p-2">${money(c.spend)}</td>
+        <td class="p-2">${c.romi.toFixed(2)}</td>
+        <td class="p-2">${deltaBadge(c.delta)}</td>
+        <td class="p-2 font-medium ${c.profit >= 0 ? 'text-up' : 'text-down'}">${money(c.profit)}</td>
+      </tr>`
+          : `<tr class="border-t border-slate-100" data-ch-idx="${idx}">
         <td class="p-2"><input type="text" class="ch-name w-full rounded-lg border border-slate-200 px-2 py-1 text-sm" value="${escAttr(c.name)}" /></td>
         <td class="p-2"><input type="number" class="ch-rev w-28 rounded-lg border border-slate-200 px-2 py-1 text-sm" value="${c.revenue}" /></td>
         <td class="p-2"><input type="number" class="ch-spend w-28 rounded-lg border border-slate-200 px-2 py-1 text-sm" value="${c.spend}" /></td>
@@ -379,12 +447,38 @@ function renderSales(state) {
         <td class="p-2">${deltaBadge(c.delta)}</td>
         <td class="p-2 font-medium ${c.profit >= 0 ? 'text-up' : 'text-down'}">${money(c.profit)}</td>
       </tr>`
-      )
-      .join('');
+    )
+    .join('');
+}
+
+/** @param {boolean} readOnly — просмотр на вкладке «Продажи»; false — редактирование в Data Hub */
+function renderSales(state, readOnly = true) {
+  const { y, m } = getYM();
+  const key = periodKey(y, m);
+  const data = computeWithPrev(state, y, m);
+  renderPeriodHeader();
+
+  const qtyBodyId = readOnly ? 'salesQtyBody' : 'hubSalesQtyBody';
+  const chBodyId = readOnly ? 'channelsEditBody' : 'hubChannelsEditBody';
+
+  const tbody = document.getElementById(qtyBodyId);
+  if (tbody) tbody.innerHTML = renderSalesTableRows(state, key, readOnly);
+
+  const month = ensureMonth(state, key);
+  const ordVal = month.orders ?? data.orders;
+  if (readOnly) {
+    const disp = document.getElementById('displayOrders');
+    if (disp) disp.textContent = String(ordVal ?? 0);
+  } else {
+    const hubOrd = document.getElementById('hubInputOrders');
+    if (hubOrd) hubOrd.value = ordVal;
   }
 
+  const chBody = document.getElementById(chBodyId);
+  if (chBody) chBody.innerHTML = renderChannelsRows(data, readOnly);
+
   const unitBody = document.getElementById('unitBody');
-  if (unitBody) {
+  if (unitBody && readOnly) {
     unitBody.innerHTML = data.products
       .map(
         (p) => `<tr class="border-t border-slate-100">
@@ -403,73 +497,93 @@ function renderSales(state) {
       .join('');
   }
 
-  renderBusinessUnit(data);
+  if (readOnly) renderBusinessUnit(data);
 }
 
-function renderExpenses(state) {
-  const { y, m } = getYM();
-  const key = periodKey(y, m);
-  renderPeriodHeader();
-
-  const pay = document.getElementById('payrollBody');
-  if (pay) {
-    pay.innerHTML = (state.payroll || [])
-      .map(
-        (r) => `<tr class="border-t border-slate-100">
+function renderPayrollRows(rows, readOnly) {
+  return (rows || [])
+    .map((r) =>
+      readOnly
+        ? `<tr class="border-t border-slate-100">
+      <td class="p-2">${escapeHtml(r.fullName)}</td>
+      <td class="p-2 text-muted">${escapeHtml(r.position || '—')}</td>
+      <td class="p-2 font-medium">${money(r.amount)}</td>
+    </tr>`
+        : `<tr class="border-t border-slate-100">
       <td class="p-2">${escapeHtml(r.fullName)}</td>
       <td class="p-2 text-muted">${escapeHtml(r.position || '—')}</td>
       <td class="p-2 font-medium">${money(r.amount)}</td>
       <td class="p-2"><button type="button" data-del-payroll="${r.id}" class="text-xs text-red-600 hover:underline">Удалить</button></td>
     </tr>`
-      )
-      .join('');
-  }
+    )
+    .join('');
+}
 
-  const rent = document.getElementById('rentBody');
-  if (rent) {
-    rent.innerHTML = (state.rent || [])
-      .map(
-        (r) => `<tr class="border-t border-slate-100">
+function renderRentRows(rows, readOnly) {
+  return (rows || [])
+    .map((r) =>
+      readOnly
+        ? `<tr class="border-t border-slate-100">
+      <td class="p-2">${escapeHtml(r.title)}</td>
+      <td class="p-2 font-medium">${money(r.amount)}</td>
+    </tr>`
+        : `<tr class="border-t border-slate-100">
       <td class="p-2">${escapeHtml(r.title)}</td>
       <td class="p-2 font-medium">${money(r.amount)}</td>
       <td class="p-2"><button type="button" data-del-rent="${r.id}" class="text-xs text-red-600 hover:underline">Удалить</button></td>
     </tr>`
-      )
-      .join('');
-  }
+    )
+    .join('');
+}
 
-  const lines = (state.expenseLines || []).filter((e) => e.periodKey === key);
-  const list = document.getElementById('expenseLinesList');
-  if (list) {
-    list.innerHTML = lines.length
-      ? lines
-          .map((e) => {
-            const cat = EXPENSE_CATEGORIES.find((c) => c.id === e.category);
-            return `<li class="flex flex-wrap justify-between gap-2 px-4 py-3 bg-white">
+function renderExpenseLinesHtml(lines, readOnly) {
+  if (!lines.length)
+    return `<li class="px-4 py-6 text-center text-muted text-sm">Нет строк за этот месяц.</li>`;
+  return lines
+    .map((e) => {
+      const cat = EXPENSE_CATEGORIES.find((c) => c.id === e.category);
+      const del = readOnly
+        ? ''
+        : `<button type="button" data-del-expense="${e.id}" class="text-xs text-red-600 hover:underline w-full text-left sm:w-auto">Удалить</button>`;
+      return `<li class="flex flex-wrap justify-between gap-2 px-4 py-3 bg-white">
             <span><span class="font-medium">${escapeHtml(cat?.label || e.category)}</span> — ${escapeHtml(e.note || '—')}</span>
             <span class="font-semibold">${money(e.amount)}</span>
-            <button type="button" data-del-expense="${e.id}" class="text-xs text-red-600 hover:underline w-full text-left sm:w-auto">Удалить</button>
+            ${del}
           </li>`;
-          })
-          .join('')
-      : `<li class="px-4 py-6 text-center text-muted text-sm">Нет строк за этот месяц.</li>`;
-  }
+    })
+    .join('');
+}
+
+/** @param {boolean} readOnly */
+function renderExpenses(state, readOnly = true) {
+  const { y, m } = getYM();
+  const key = periodKey(y, m);
+  renderPeriodHeader();
+
+  const payId = readOnly ? 'payrollBody' : 'hubPayrollBody';
+  const rentId = readOnly ? 'rentBody' : 'hubRentBody';
+  const listId = readOnly ? 'expenseLinesList' : 'hubExpenseLinesList';
+
+  const pay = document.getElementById(payId);
+  if (pay) pay.innerHTML = renderPayrollRows(state.payroll, readOnly);
+
+  const rent = document.getElementById(rentId);
+  if (rent) rent.innerHTML = renderRentRows(state.rent, readOnly);
+
+  const lines = (state.expenseLines || []).filter((e) => e.periodKey === key);
+  const list = document.getElementById(listId);
+  if (list) list.innerHTML = renderExpenseLinesHtml(lines, readOnly);
 
   const sel = document.getElementById('expenseCategory');
-  if (sel && !sel.dataset.ready) {
+  if (sel && !readOnly && !sel.dataset.ready) {
     sel.innerHTML = EXPENSE_CATEGORIES.map((c) => `<option value="${c.id}">${c.label}</option>`).join('');
     sel.dataset.ready = '1';
   }
 }
 
-function renderCatalog(state) {
-  const { y, m } = getYM();
-  const key = periodKey(y, m);
-  renderPeriodHeader();
+function renderCatalogRows(state, key, readOnly) {
   const merged = getMergedSales(state, key);
-  const body = document.getElementById('catalogBody');
-  if (!body) return;
-  body.innerHTML = state.catalog
+  return state.catalog
     .map((p) => {
       const line = merged.find((l) => l.catalogId === p.id);
       const sold = Number(line?.qty) || 0;
@@ -477,6 +591,20 @@ function renderCatalog(state) {
       const revM = sold * (Number(p.retail) || 0);
       const stCost = stock * (Number(p.purchase) || 0);
       const stRet = stock * (Number(p.retail) || 0);
+      if (readOnly) {
+        return `<tr class="border-t border-slate-100">
+    <td class="p-2 font-medium">${escapeHtml(p.name)}</td>
+    <td class="p-2">${escapeHtml(p.sku)}</td>
+    <td class="p-2">${money(p.retail)}</td>
+    <td class="p-2">${money(p.purchase)}</td>
+    <td class="p-2">${stock}</td>
+    <td class="p-2 text-sm font-medium">${sold}</td>
+    <td class="p-2 text-sm font-medium">${money(revM)}</td>
+    <td class="p-2 text-sm">${money(stCost)}</td>
+    <td class="p-2 text-sm">${money(stRet)}</td>
+    <td class="p-2 text-sm">${escapeHtml(p.category || '')}</td>
+  </tr>`;
+      }
       return `<tr class="border-t border-slate-100">
     <td class="p-2"><input data-cat-name="${p.id}" class="w-full max-w-[200px] rounded-lg border border-slate-200 px-2 py-1 text-sm" value="${escAttr(p.name)}" /></td>
     <td class="p-2"><input data-cat-sku="${p.id}" class="w-24 rounded-lg border border-slate-200 px-2 py-1 text-sm" value="${escAttr(p.sku)}" /></td>
@@ -494,6 +622,51 @@ function renderCatalog(state) {
     .join('');
 }
 
+/** @param {boolean} readOnly */
+function renderCatalog(state, readOnly = true) {
+  const { y, m } = getYM();
+  const key = periodKey(y, m);
+  renderPeriodHeader();
+  const bodyId = readOnly ? 'catalogBody' : 'hubCatalogBody';
+  const body = document.getElementById(bodyId);
+  if (!body) return;
+  body.innerHTML = renderCatalogRows(state, key, readOnly);
+}
+
+function renderBackupList(state) {
+  const ul = document.getElementById('backupList');
+  if (!ul) return;
+  const list = state.preImportBackups || [];
+  if (!list.length) {
+    ul.innerHTML = '<li class="py-2 text-muted">Пока нет автоматических копий (появятся после первого импорта).</li>';
+    return;
+  }
+  ul.innerHTML = list
+    .map(
+      (b) => `
+    <li class="flex flex-wrap items-center justify-between gap-2 py-2">
+      <span class="text-xs text-muted">${formatSourceDate(b.createdAt)} — ${escapeHtml(b.note || '')}</span>
+      <button type="button" class="text-xs font-semibold text-accent hover:underline" data-restore-backup="${escAttr(b.id)}">Откатить</button>
+    </li>`
+    )
+    .join('');
+}
+
+function renderDataHub(state) {
+  renderPeriodHeader();
+  renderBackupList(state);
+  const int = state.integrations || {};
+  const g = document.getElementById('intGoogleKey');
+  const m = document.getElementById('intMoiskladKey');
+  const c = document.getElementById('intCrmKey');
+  const n = document.getElementById('intOneCNotes');
+  if (g) g.value = int.googleSheetsApiKey || '';
+  if (m) m.value = int.moiskladApiKey || '';
+  if (c) c.value = int.crmApiKey || '';
+  if (n) n.value = int.oneCNotes || '';
+  updateHubLockUi();
+}
+
 function setTab(tab) {
   activeTab = tab;
   sessionStorage.setItem('profitTab', tab);
@@ -506,6 +679,7 @@ function setTab(tab) {
   document.querySelectorAll('.tab-panel').forEach((p) => {
     p.classList.toggle('hidden', p.id !== `panel-${tab}`);
   });
+  updateHubLockUi();
   refresh();
 }
 
@@ -514,9 +688,15 @@ function refresh() {
     const state = getState();
     renderPeriodHeader();
     if (activeTab === 'dashboard') renderDashboard(state);
-    else if (activeTab === 'sales') renderSales(state);
-    else if (activeTab === 'expenses') renderExpenses(state);
-    else if (activeTab === 'catalog') renderCatalog(state);
+    else if (activeTab === 'sales') renderSales(state, true);
+    else if (activeTab === 'expenses') renderExpenses(state, true);
+    else if (activeTab === 'catalog') renderCatalog(state, true);
+    else if (activeTab === 'datahub') {
+      renderDataHub(state);
+      renderSales(state, false);
+      renderExpenses(state, false);
+      renderCatalog(state, false);
+    }
   } catch (e) {
     console.error(e);
     showToast(String(e?.message || e), 'error');
@@ -562,10 +742,11 @@ function initSelects() {
 }
 
 function wireSales() {
-  const panel = document.getElementById('panel-sales');
+  const panel = document.getElementById('panel-datahub');
   if (!panel) return;
 
   panel.addEventListener('change', (e) => {
+    if (!isHubUnlocked()) return;
     const t = e.target;
     const { y, m } = getYM();
     const key = periodKey(y, m);
@@ -579,18 +760,21 @@ function wireSales() {
           l.catalogId === id ? { catalogId: id, qty } : l
         );
       });
+      setDataSourceMeta({ kind: 'manual', format: null, label: 'Ручное изменение продаж' });
       return;
     }
 
-    if (t.matches('#inputOrders')) {
+    if (t.matches('#hubInputOrders')) {
       const v = Math.max(0, Math.floor(Number(t.value) || 0));
       patchState((s) => {
         ensureMonth(s, key).orders = v;
       });
+      setDataSourceMeta({ kind: 'manual', format: null, label: 'Ручное изменение заказов' });
     }
   });
 
   panel.addEventListener('change', (e) => {
+    if (!isHubUnlocked()) return;
     const tr = e.target.closest('tr[data-ch-idx]');
     if (!tr) return;
     const idx = +tr.getAttribute('data-ch-idx');
@@ -607,12 +791,14 @@ function wireSales() {
       ch[idx] = { ...ch[idx], name, revenue, spend };
       mo.channels = ch;
     });
+    setDataSourceMeta({ kind: 'manual', format: null, label: 'Ручное изменение каналов' });
   });
 }
 
 function wireExpenses() {
   document.getElementById('formPayroll')?.addEventListener('submit', (e) => {
     e.preventDefault();
+    if (!isHubUnlocked()) return;
     const fd = new FormData(e.target);
     patchState((s) => {
       s.payroll = s.payroll || [];
@@ -623,10 +809,12 @@ function wireExpenses() {
         amount: Math.max(0, Number(fd.get('amount')) || 0),
       });
     });
+    setDataSourceMeta({ kind: 'manual', format: null, label: 'Ручной ввод ФОТ' });
     e.target.reset();
   });
   document.getElementById('formRent')?.addEventListener('submit', (e) => {
     e.preventDefault();
+    if (!isHubUnlocked()) return;
     const fd = new FormData(e.target);
     patchState((s) => {
       s.rent = s.rent || [];
@@ -636,10 +824,12 @@ function wireExpenses() {
         amount: Math.max(0, Number(fd.get('amount')) || 0),
       });
     });
+    setDataSourceMeta({ kind: 'manual', format: null, label: 'Ручной ввод аренды' });
     e.target.reset();
   });
   document.getElementById('formExpense')?.addEventListener('submit', (e) => {
     e.preventDefault();
+    if (!isHubUnlocked()) return;
     const { y, m } = getYM();
     const key = periodKey(y, m);
     const fd = new FormData(e.target);
@@ -653,28 +843,43 @@ function wireExpenses() {
         note: String(fd.get('note') || '').trim(),
       });
     });
+    setDataSourceMeta({ kind: 'manual', format: null, label: 'Ручной ввод расхода' });
     e.target.reset();
   });
 
-  document.getElementById('panel-expenses')?.addEventListener('click', (e) => {
+  document.getElementById('panel-datahub')?.addEventListener('click', (e) => {
+    if (!isHubUnlocked()) return;
     const t = e.target;
     if (t.matches('[data-del-payroll]')) {
       const id = t.getAttribute('data-del-payroll');
       patchState((s) => {
         s.payroll = (s.payroll || []).filter((r) => r.id !== id);
       });
+      setDataSourceMeta({ kind: 'manual', format: null, label: 'Удаление строки ФОТ' });
     }
     if (t.matches('[data-del-rent]')) {
       const id = t.getAttribute('data-del-rent');
       patchState((s) => {
         s.rent = (s.rent || []).filter((r) => r.id !== id);
       });
+      setDataSourceMeta({ kind: 'manual', format: null, label: 'Удаление аренды' });
     }
     if (t.matches('[data-del-expense]')) {
       const id = t.getAttribute('data-del-expense');
       patchState((s) => {
         s.expenseLines = (s.expenseLines || []).filter((r) => r.id !== id);
       });
+      setDataSourceMeta({ kind: 'manual', format: null, label: 'Удаление расхода' });
+    }
+    if (t.matches('[data-restore-backup]')) {
+      const id = t.getAttribute('data-restore-backup');
+      if (id && confirm('Восстановить данные из этой резервной копии? Текущее состояние будет заменено.')) {
+        if (restorePreImportBackup(id)) {
+          showToast('Данные восстановлены из копии.');
+        } else {
+          showToast('Не удалось восстановить копию.', 'error');
+        }
+      }
     }
   });
 }
@@ -682,6 +887,7 @@ function wireExpenses() {
 function wireCatalog() {
   document.getElementById('formCatalog')?.addEventListener('submit', (e) => {
     e.preventDefault();
+    if (!isHubUnlocked()) return;
     const fd = new FormData(e.target);
     const newId = uid('cat');
     patchState((s) => {
@@ -698,10 +904,12 @@ function wireCatalog() {
         writeMergedSales(s, k);
       }
     });
+    setDataSourceMeta({ kind: 'manual', format: null, label: 'Добавление позиции в справочник' });
     e.target.reset();
   });
 
-  document.getElementById('panel-catalog')?.addEventListener('change', (e) => {
+  document.getElementById('panel-datahub')?.addEventListener('change', (e) => {
+    if (!isHubUnlocked()) return;
     const t = e.target;
     const id =
       t.getAttribute('data-cat-name') ||
@@ -721,9 +929,11 @@ function wireCatalog() {
       if (t.matches('[data-cat-stock]')) p.stockQty = Math.max(0, Math.floor(Number(t.value) || 0));
       if (t.matches('[data-cat-cat]')) p.category = t.value;
     });
+    setDataSourceMeta({ kind: 'manual', format: null, label: 'Правка справочника' });
   });
 
-  document.getElementById('panel-catalog')?.addEventListener('click', (e) => {
+  document.getElementById('panel-datahub')?.addEventListener('click', (e) => {
+    if (!isHubUnlocked()) return;
     if (e.target.matches('[data-del-catalog]')) {
       const id = e.target.getAttribute('data-del-catalog');
       patchState((s) => {
@@ -733,12 +943,63 @@ function wireCatalog() {
           mo.sales = (mo.sales || []).filter((l) => l.catalogId !== id);
         }
       });
+      setDataSourceMeta({ kind: 'manual', format: null, label: 'Удаление из справочника' });
     }
+  });
+}
+
+function wireDataHub() {
+  document.getElementById('btnHubUnlock')?.addEventListener('click', () => {
+    const code = window.prompt('Код доступа к разделу редактирования (по умолчанию: 0000):', '');
+    if (code === null) return;
+    if (code === '0000' || code === '') {
+      sessionStorage.setItem(HUB_UNLOCK_KEY, '1');
+      updateHubLockUi();
+      refresh();
+      showToast('Режим редактирования включён на эту сессию браузера.');
+    } else {
+      showToast('Неверный код.', 'error');
+    }
+  });
+
+  document.getElementById('btnReloadSource')?.addEventListener('click', () => {
+    if (!confirm('Подтянуть данные заново из localStorage этого браузера? Несохранённые на другой вкладке изменения не подхватятся.')) return;
+    if (reloadStateFromDisk()) {
+      showToast('Данные перечитаны из источника (localStorage).');
+    } else {
+      showToast('В хранилище нет сохранённого состояния.', 'error');
+    }
+  });
+
+  document.getElementById('btnSaveIntegrations')?.addEventListener('click', () => {
+    if (!isHubUnlocked()) {
+      showToast('Сначала войдите в режим редактирования.', 'error');
+      return;
+    }
+    if (!confirm('Сохранить ключи и заметки интеграций в этом браузере?')) return;
+    const g = document.getElementById('intGoogleKey')?.value ?? '';
+    const m = document.getElementById('intMoiskladKey')?.value ?? '';
+    const c = document.getElementById('intCrmKey')?.value ?? '';
+    const n = document.getElementById('intOneCNotes')?.value ?? '';
+    patchState((s) => {
+      s.integrations = {
+        googleSheetsApiKey: String(g),
+        moiskladApiKey: String(m),
+        crmApiKey: String(c),
+        oneCNotes: String(n),
+      };
+    });
+    setDataSourceMeta({ kind: 'settings', format: null, label: 'Настройки интеграций' });
+    showToast('Настройки интеграций сохранены.');
   });
 }
 
 function wireReset() {
   document.getElementById('btnResetDemo')?.addEventListener('click', () => {
+    if (!isHubUnlocked()) {
+      showToast('Сначала откройте «Интеграции» и войдите в режим редактирования.', 'error');
+      return;
+    }
     if (confirm('Сбросить все сохранённые данные и вернуть демо?')) {
       localStorage.removeItem(STORAGE_KEY);
       resetToDemo();
@@ -749,20 +1010,38 @@ function wireReset() {
 
 function wirePersist() {
   document.getElementById('btnPersist')?.addEventListener('click', async () => {
+    if (!isHubUnlocked()) {
+      showToast('Сначала войдите в режим редактирования.', 'error');
+      return;
+    }
+    if (!confirm('Сохранить текущее состояние в localStorage этого браузера?')) return;
     await dataRepository.flush();
     showToast('Данные сохранены в этом браузере (localStorage).');
   });
 }
 
+const IMPORT_KIND_LABELS = {
+  excel: 'Excel / таблица',
+  '1c': '1С (выгрузка)',
+  moisklad: 'МойСклад',
+  csv: 'CSV',
+};
+
 function wireImportCatalog() {
   const btn = document.getElementById('btnImportCatalog');
   const input = document.getElementById('importCatalogFile');
   if (!btn || !input) return;
-  btn.addEventListener('click', () => input.click());
+  btn.addEventListener('click', () => {
+    if (!isHubUnlocked()) {
+      showToast('Сначала войдите в режим редактирования.', 'error');
+      return;
+    }
+    input.click();
+  });
   input.addEventListener('change', async () => {
     const file = input.files?.[0];
     input.value = '';
-    if (!file) return;
+    if (!file || !isHubUnlocked()) return;
     try {
       const rows = await parseImportFile(file);
       if (!rows.length) {
@@ -771,8 +1050,17 @@ function wireImportCatalog() {
       }
       const { y, m } = getYM();
       const key = periodKey(y, m);
+      const kindSel = document.getElementById('importSourceKind')?.value || 'excel';
+      const kindLabel = IMPORT_KIND_LABELS[kindSel] || kindSel;
+      pushPreImportBackup(`Перед импортом: ${file.name}`);
       await dataRepository.importCatalogRows(rows, key);
-      showToast(`Импорт выполнен: ${rows.length} строк. Период: ${MONTH_NAMES[m - 1]} ${y}.`);
+      setDataSourceMeta({
+        kind: 'file',
+        format: kindSel,
+        label: `${kindLabel}: ${file.name}`,
+        fileName: file.name,
+      });
+      showToast(`Импорт выполнен: ${rows.length} строк. Период: ${MONTH_NAMES[m - 1]} ${y}. Создана резервная копия.`);
       setTab('catalog');
     } catch (err) {
       showToast(err?.message || 'Ошибка импорта файла', 'error');
@@ -788,6 +1076,7 @@ wirePeriod();
 wireSales();
 wireExpenses();
 wireCatalog();
+wireDataHub();
 wireReset();
 wirePersist();
 wireImportCatalog();
@@ -796,6 +1085,7 @@ const loaded = loadFromStorage();
 if (!loaded && !localStorage.getItem(STORAGE_KEY)) persist();
 else if (loaded) persist();
 
+updateHubLockUi();
 setTab(activeTab);
 
 window.__profitAppReady = true;

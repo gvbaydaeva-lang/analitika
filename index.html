@@ -92,13 +92,13 @@
     </div>
     <nav class="p-3 flex flex-col gap-1 text-sm flex-1">
       <button type="button" data-tab="dashboard" class="tab-btn text-left rounded-xl px-3 py-2.5 font-medium tab-active">Дашборд</button>
-      <button type="button" data-tab="sales" class="tab-btn text-left rounded-xl px-3 py-2.5 font-medium tab-inactive">Продажи и юнит-экономика</button>
-      <button type="button" data-tab="expenses" class="tab-btn text-left rounded-xl px-3 py-2.5 font-medium tab-inactive">Расходы и команда</button>
-      <button type="button" data-tab="catalog" class="tab-btn text-left rounded-xl px-3 py-2.5 font-medium tab-inactive">Справочник товаров</button>
+      <button type="button" data-tab="sales" class="tab-btn text-left rounded-xl px-3 py-2.5 font-medium tab-inactive">Продажи <span class="text-slate-500 font-normal">(просмотр)</span></button>
+      <button type="button" data-tab="expenses" class="tab-btn text-left rounded-xl px-3 py-2.5 font-medium tab-inactive">Расходы <span class="text-slate-500 font-normal">(просмотр)</span></button>
+      <button type="button" data-tab="catalog" class="tab-btn text-left rounded-xl px-3 py-2.5 font-medium tab-inactive">Справочник <span class="text-slate-500 font-normal">(просмотр)</span></button>
+      <button type="button" data-tab="datahub" class="tab-btn text-left rounded-xl px-3 py-2.5 font-medium tab-inactive border border-amber-400/40 bg-amber-500/10 text-amber-100">Интеграции и загрузка</button>
     </nav>
     <div class="p-4 border-t border-white/10 text-xs text-slate-500 space-y-2">
-      <p>Данные сохраняются в этом браузере (localStorage).</p>
-      <button type="button" id="btnResetDemo" class="w-full rounded-lg bg-white/10 hover:bg-white/15 py-2 text-slate-200 text-xs font-medium">Сбросить к демо-данным</button>
+      <p>Данные в браузере (localStorage). Редактирование — только в «Интеграции и загрузка».</p>
     </div>
   </aside>
 
@@ -119,15 +119,15 @@
             Год
             <select id="selectYear" class="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium shadow-sm min-w-[96px] focus:ring-2 focus:ring-brand-500/30 outline-none"></select>
           </label>
-          <button type="button" id="btnPersist" class="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-ink shadow-sm hover:bg-slate-50 h-fit">Сохранить</button>
         </div>
       </div>
     </header>
 
     <div class="flex-1 overflow-y-auto px-5 lg:px-8 py-6 max-w-6xl mx-auto w-full">
 
-      <!-- Дашборд -->
+      <!-- Дашборд (только чтение) -->
       <section id="panel-dashboard" class="tab-panel space-y-6">
+        <div id="dashboardSourceStrip" class="rounded-2xl border border-slate-200/80 bg-card px-4 py-3 shadow-sm flex flex-wrap items-center gap-3 text-sm"></div>
         <div id="overviewBlocks" class="grid sm:grid-cols-2 gap-3"></div>
         <div id="kpiGrid" class="grid grid-cols-2 lg:grid-cols-4 gap-3"></div>
         <div>
@@ -160,8 +160,9 @@
         </details>
       </section>
 
-      <!-- Продажи -->
+      <!-- Продажи (только просмотр) -->
       <section id="panel-sales" class="tab-panel hidden space-y-6">
+        <p class="text-xs font-medium text-brand-700 bg-brand-50 border border-brand-100 rounded-xl px-3 py-2">Только просмотр. Изменить количества, заказы и каналы можно в разделе «Интеграции и загрузка».</p>
         <div class="rounded-2xl border border-slate-200/80 bg-card p-5 shadow-sm">
           <h3 class="font-bold">Продажи по справочнику (кол-во за месяц)</h3>
           <p class="text-xs text-muted mt-1">Цены и закуп берутся из справочника товаров.</p>
@@ -183,11 +184,7 @@
               <tbody id="salesQtyBody"></tbody>
             </table>
           </div>
-          <div class="mt-4 flex flex-wrap gap-4 items-end">
-            <label class="text-xs font-medium text-muted">Заказов за месяц
-              <input type="number" id="inputOrders" min="0" class="mt-1 block w-32 rounded-xl border border-slate-200 px-3 py-2 text-sm font-medium" />
-            </label>
-          </div>
+          <p class="mt-4 text-sm"><span class="text-muted">Заказов за месяц:</span> <span id="displayOrders" class="font-semibold">—</span></p>
         </div>
         <div class="rounded-2xl border border-slate-200/80 bg-card p-5 shadow-sm">
           <h3 class="font-bold">Каналы (выручка и расход на рекламу)</h3>
@@ -233,56 +230,30 @@
         </div>
       </section>
 
-      <!-- Расходы и команда -->
+      <!-- Расходы (только просмотр) -->
       <section id="panel-expenses" class="tab-panel hidden space-y-6">
+        <p class="text-xs font-medium text-brand-700 bg-brand-50 border border-brand-100 rounded-xl px-3 py-2">Только просмотр. Добавлять и удалять строки — в «Интеграции и загрузка».</p>
         <div class="grid lg:grid-cols-2 gap-5">
           <div class="rounded-2xl border border-slate-200/80 bg-card p-5 shadow-sm">
             <h3 class="font-bold">Зарплаты (ФОТ)</h3>
             <p class="text-xs text-muted mt-1">Ежемесячные суммы — учитываются в каждом месяце.</p>
             <div class="overflow-x-auto mt-3 rounded-xl border border-slate-100 max-h-56 overflow-y-auto">
               <table class="w-full text-sm">
-                <thead><tr class="text-left text-muted bg-slate-50/90"><th class="p-2">Сотрудник / статья</th><th class="p-2">Роль</th><th class="p-2">₽ / мес</th><th class="p-2"></th></tr></thead>
+                <thead><tr class="text-left text-muted bg-slate-50/90"><th class="p-2">Сотрудник / статья</th><th class="p-2">Роль</th><th class="p-2">₽ / мес</th></tr></thead>
                 <tbody id="payrollBody"></tbody>
               </table>
             </div>
-            <form id="formPayroll" class="mt-4 grid sm:grid-cols-4 gap-2 items-end">
-              <input name="fullName" placeholder="ФИО или статья" class="rounded-xl border border-slate-200 px-3 py-2 text-sm sm:col-span-2" required />
-              <input name="position" placeholder="Роль" class="rounded-xl border border-slate-200 px-3 py-2 text-sm" />
-              <input name="amount" type="number" min="0" step="1" placeholder="Сумма" class="rounded-xl border border-slate-200 px-3 py-2 text-sm" required />
-              <button type="submit" class="sm:col-span-4 rounded-xl bg-brand-600 hover:bg-brand-700 text-white text-sm font-semibold py-2.5">Добавить строку ФОТ</button>
-            </form>
           </div>
           <div class="rounded-2xl border border-slate-200/80 bg-card p-5 shadow-sm">
             <h3 class="font-bold">Аренда</h3>
             <p class="text-xs text-muted mt-1">Постоянные платежи за помещения.</p>
             <div class="overflow-x-auto mt-3 rounded-xl border border-slate-100 max-h-56 overflow-y-auto">
               <table class="w-full text-sm">
-                <thead><tr class="text-left text-muted bg-slate-50/90"><th class="p-2">Объект</th><th class="p-2">₽ / мес</th><th class="p-2"></th></tr></thead>
+                <thead><tr class="text-left text-muted bg-slate-50/90"><th class="p-2">Объект</th><th class="p-2">₽ / мес</th></tr></thead>
                 <tbody id="rentBody"></tbody>
               </table>
             </div>
-            <form id="formRent" class="mt-4 grid sm:grid-cols-3 gap-2 items-end">
-              <input name="title" placeholder="Название (офис, склад…)" class="rounded-xl border border-slate-200 px-3 py-2 text-sm sm:col-span-2" required />
-              <input name="amount" type="number" min="0" step="1" placeholder="Сумма" class="rounded-xl border border-slate-200 px-3 py-2 text-sm" required />
-              <button type="submit" class="sm:col-span-3 rounded-xl bg-slate-800 hover:bg-slate-900 text-white text-sm font-semibold py-2.5">Добавить аренду</button>
-            </form>
           </div>
-        </div>
-        <div class="rounded-2xl border border-slate-200/80 bg-card p-5 shadow-sm">
-          <h3 class="font-bold">Новый расход</h3>
-          <p class="text-xs text-muted mt-1">Категории: доп. маркетинг, коммуналка, прочее — привязка к выбранному в шапке месяцу.</p>
-          <form id="formExpense" class="mt-4 grid sm:grid-cols-2 lg:grid-cols-4 gap-3 items-end">
-            <label class="text-xs font-medium text-muted sm:col-span-2">Категория
-              <select name="category" id="expenseCategory" class="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm font-medium bg-white"></select>
-            </label>
-            <label class="text-xs font-medium text-muted">Сумма, ₽
-              <input name="amount" type="number" min="0" step="1" class="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm" required />
-            </label>
-            <label class="text-xs font-medium text-muted sm:col-span-2 lg:col-span-1">Комментарий
-              <input name="note" class="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm" placeholder="Назначение платежа" />
-            </label>
-            <button type="submit" class="rounded-xl bg-accent hover:bg-indigo-600 text-white text-sm font-semibold py-2.5 px-4">Добавить расход</button>
-          </form>
         </div>
         <div class="rounded-2xl border border-slate-200/80 bg-card p-5 shadow-sm">
           <h3 class="font-bold">Журнал расходов за выбранный месяц</h3>
@@ -290,17 +261,14 @@
         </div>
       </section>
 
-      <!-- Справочник -->
+      <!-- Справочник (только просмотр) -->
       <section id="panel-catalog" class="tab-panel hidden space-y-6">
+        <p class="text-xs font-medium text-brand-700 bg-brand-50 border border-brand-100 rounded-xl px-3 py-2">Только просмотр. Импорт и правки номенклатуры — в «Интеграции и загрузка».</p>
         <div class="rounded-2xl border border-slate-200/80 bg-card p-5 shadow-sm">
           <div class="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
             <div>
               <h3 class="font-bold">Товары и услуги</h3>
               <p class="text-xs text-muted mt-1">Розничная и закупочная цена, остатки. Колонки «за месяц» — для выбранного в шапке периода.</p>
-            </div>
-            <div class="flex flex-wrap gap-2 shrink-0">
-              <input type="file" id="importCatalogFile" accept=".csv,.txt,.xlsx,.xls" class="hidden" />
-              <button type="button" id="btnImportCatalog" class="rounded-xl bg-accentsoft text-accent border border-indigo-200 px-4 py-2 text-sm font-semibold hover:bg-indigo-100">Импорт из Excel/CSV</button>
             </div>
           </div>
           <div class="overflow-x-auto mt-4 rounded-xl border border-slate-100">
@@ -317,13 +285,187 @@
                   <th class="p-3 font-semibold">Остаток ₽ закуп</th>
                   <th class="p-3 font-semibold">Остаток ₽ розница</th>
                   <th class="p-3 font-semibold">Кат.</th>
-                  <th class="p-3 font-semibold"></th>
                 </tr>
               </thead>
               <tbody id="catalogBody"></tbody>
             </table>
           </div>
-          <form id="formCatalog" class="mt-5 grid sm:grid-cols-2 lg:grid-cols-7 gap-2 items-end">
+        </div>
+      </section>
+
+      <!-- Центр управления данными -->
+      <section id="panel-datahub" class="tab-panel hidden space-y-6">
+        <div class="rounded-2xl border border-amber-200/80 bg-amber-50/40 p-5 shadow-sm">
+          <h2 class="font-bold text-lg text-ink">Интеграции и загрузка</h2>
+          <p class="text-sm text-muted mt-1">Единственное место для импорта, ключей API и ручного ввода. Доступ по коду сессии (по умолчанию <code class="bg-white px-1 rounded">0000</code> — смените в настройках позже).</p>
+          <div class="mt-3 flex flex-wrap gap-2">
+            <button type="button" id="btnHubUnlock" class="rounded-xl bg-slate-900 text-white text-sm font-semibold px-4 py-2">Войти в режим редактирования</button>
+            <span id="hubLockBadge" class="text-xs font-medium text-amber-800 self-center">Заблокировано</span>
+          </div>
+        </div>
+
+        <div class="rounded-2xl border border-slate-200/80 bg-card p-5 shadow-sm space-y-4">
+          <h3 class="font-bold flex items-center gap-2"><span class="w-1 h-4 rounded-full bg-brand-500"></span> Единый источник данных</h3>
+          <p class="text-xs text-muted">Перед обновлением с диска временные несохранённые правки в памяти не используются — подставляется последнее сохранённое состояние из этого браузера.</p>
+          <div class="flex flex-wrap gap-2">
+            <button type="button" id="btnReloadSource" class="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold shadow-sm hover:bg-slate-50">Обновить из источника (localStorage)</button>
+          </div>
+        </div>
+
+        <div class="rounded-2xl border border-slate-200/80 bg-card p-5 shadow-sm space-y-3">
+          <h3 class="font-bold">Резервные копии перед импортом</h3>
+          <p class="text-xs text-muted">Перед каждым новым импортом файла автоматически создаётся снимок; здесь можно откатиться.</p>
+          <ul id="backupList" class="text-sm space-y-2 divide-y divide-slate-100"></ul>
+        </div>
+
+        <div class="rounded-2xl border border-slate-200/80 bg-card p-5 shadow-sm space-y-4 hub-guard hidden">
+          <h3 class="font-bold">Импорт файла</h3>
+          <p class="text-xs text-muted">Excel, CSV; выгрузки 1С и МойСклад обычно сохраняют в .csv или .xlsx — выберите тот же формат.</p>
+          <div class="flex flex-wrap gap-3 items-end">
+            <label class="text-xs font-medium text-muted">Тип выгрузки (для подписи на дашборде)
+              <select id="importSourceKind" class="mt-1 block rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm min-w-[180px]">
+                <option value="excel">Excel / таблица</option>
+                <option value="1c">1С (выгрузка)</option>
+                <option value="moisklad">МойСклад</option>
+                <option value="csv">CSV</option>
+              </select>
+            </label>
+            <input type="file" id="importCatalogFile" accept=".csv,.txt,.xlsx,.xls" class="hidden" />
+            <button type="button" id="btnImportCatalog" class="rounded-xl bg-accentsoft text-accent border border-indigo-200 px-4 py-2 text-sm font-semibold hover:bg-indigo-100">Выбрать файл и импортировать</button>
+          </div>
+        </div>
+
+        <div class="rounded-2xl border border-slate-200/80 bg-card p-5 shadow-sm space-y-4 hub-guard hidden">
+          <h3 class="font-bold">Интеграции (ключи для будущих API)</h3>
+          <p class="text-xs text-muted">Ключи хранятся только в этом браузере. Подключение к Google Sheets / CRM появится позже.</p>
+          <div class="grid sm:grid-cols-2 gap-3">
+            <label class="text-xs font-medium text-muted sm:col-span-2">Google Sheets API key
+              <input type="password" id="intGoogleKey" autocomplete="off" class="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm" placeholder="Необязательно" />
+            </label>
+            <label class="text-xs font-medium text-muted sm:col-span-2">МойСклад API key
+              <input type="password" id="intMoiskladKey" autocomplete="off" class="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm" placeholder="Необязательно" />
+            </label>
+            <label class="text-xs font-medium text-muted sm:col-span-2">CRM API key
+              <input type="password" id="intCrmKey" autocomplete="off" class="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm" placeholder="Необязательно" />
+            </label>
+            <label class="text-xs font-medium text-muted sm:col-span-2">Заметки по 1С (URL OData, обработка…)
+              <textarea id="intOneCNotes" rows="2" class="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm" placeholder="Для будущей интеграции"></textarea>
+            </label>
+          </div>
+          <button type="button" id="btnSaveIntegrations" class="rounded-xl bg-brand-600 hover:bg-brand-700 text-white text-sm font-semibold py-2.5 px-5">Сохранить настройки интеграций…</button>
+        </div>
+
+        <div class="rounded-2xl border border-slate-200/80 bg-card p-5 shadow-sm space-y-4 hub-guard hidden">
+          <h3 class="font-bold">Ручной ввод (резерв)</h3>
+          <p class="text-xs text-muted">Изменения применяются сразу к данным в браузере; для явного контроля нажмите «Сохранить в браузер» после правок.</p>
+
+          <h4 class="text-sm font-bold pt-2">Продажи и каналы</h4>
+          <div class="overflow-x-auto rounded-xl border border-slate-100">
+            <table class="w-full text-sm min-w-[560px]">
+              <thead>
+                <tr class="text-left text-muted bg-slate-50/90">
+                  <th class="p-3 font-semibold">Товар</th>
+                  <th class="p-3 font-semibold">Продано, шт</th>
+                  <th class="p-3 font-semibold">Продано, ₽</th>
+                  <th class="p-3 font-semibold">Розница/ед.</th>
+                  <th class="p-3 font-semibold">Закуп/ед.</th>
+                  <th class="p-3 font-semibold">COGS</th>
+                  <th class="p-3 font-semibold">Остаток, шт</th>
+                  <th class="p-3 font-semibold">Остаток ₽ закуп</th>
+                  <th class="p-3 font-semibold">Остаток ₽ розница</th>
+                </tr>
+              </thead>
+              <tbody id="hubSalesQtyBody"></tbody>
+            </table>
+          </div>
+          <label class="text-xs font-medium text-muted">Заказов за месяц
+            <input type="number" id="hubInputOrders" min="0" class="mt-1 block w-32 rounded-xl border border-slate-200 px-3 py-2 text-sm font-medium" />
+          </label>
+          <div class="overflow-x-auto rounded-xl border border-slate-100">
+            <table class="w-full text-sm min-w-[640px]">
+              <thead>
+                <tr class="text-left text-muted bg-slate-50/90">
+                  <th class="p-3 font-semibold">Канал</th>
+                  <th class="p-3 font-semibold">Выручка</th>
+                  <th class="p-3 font-semibold">Расход</th>
+                  <th class="p-3 font-semibold">ROMI</th>
+                  <th class="p-3 font-semibold">Δ %</th>
+                  <th class="p-3 font-semibold">Вклад</th>
+                </tr>
+              </thead>
+              <tbody id="hubChannelsEditBody"></tbody>
+            </table>
+          </div>
+
+          <h4 class="text-sm font-bold pt-4">Зарплаты и аренда</h4>
+          <div class="grid lg:grid-cols-2 gap-5">
+            <div>
+              <div class="overflow-x-auto max-h-56 overflow-y-auto rounded-xl border border-slate-100">
+                <table class="w-full text-sm">
+                  <thead><tr class="text-left text-muted bg-slate-50/90"><th class="p-2">Сотрудник / статья</th><th class="p-2">Роль</th><th class="p-2">₽ / мес</th><th class="p-2"></th></tr></thead>
+                  <tbody id="hubPayrollBody"></tbody>
+                </table>
+              </div>
+              <form id="formPayroll" class="mt-4 grid sm:grid-cols-4 gap-2 items-end">
+                <input name="fullName" placeholder="ФИО или статья" class="rounded-xl border border-slate-200 px-3 py-2 text-sm sm:col-span-2" required />
+                <input name="position" placeholder="Роль" class="rounded-xl border border-slate-200 px-3 py-2 text-sm" />
+                <input name="amount" type="number" min="0" step="1" placeholder="Сумма" class="rounded-xl border border-slate-200 px-3 py-2 text-sm" required />
+                <button type="submit" class="sm:col-span-4 rounded-xl bg-brand-600 hover:bg-brand-700 text-white text-sm font-semibold py-2.5">Добавить строку ФОТ</button>
+              </form>
+            </div>
+            <div>
+              <div class="overflow-x-auto max-h-56 overflow-y-auto rounded-xl border border-slate-100">
+                <table class="w-full text-sm">
+                  <thead><tr class="text-left text-muted bg-slate-50/90"><th class="p-2">Объект</th><th class="p-2">₽ / мес</th><th class="p-2"></th></tr></thead>
+                  <tbody id="hubRentBody"></tbody>
+                </table>
+              </div>
+              <form id="formRent" class="mt-4 grid sm:grid-cols-3 gap-2 items-end">
+                <input name="title" placeholder="Название (офис, склад…)" class="rounded-xl border border-slate-200 px-3 py-2 text-sm sm:col-span-2" required />
+                <input name="amount" type="number" min="0" step="1" placeholder="Сумма" class="rounded-xl border border-slate-200 px-3 py-2 text-sm" required />
+                <button type="submit" class="sm:col-span-3 rounded-xl bg-slate-800 hover:bg-slate-900 text-white text-sm font-semibold py-2.5">Добавить аренду</button>
+              </form>
+            </div>
+          </div>
+
+          <h4 class="text-sm font-bold">Новый расход (за выбранный в шапке месяц)</h4>
+          <form id="formExpense" class="grid sm:grid-cols-2 lg:grid-cols-4 gap-3 items-end">
+            <label class="text-xs font-medium text-muted sm:col-span-2">Категория
+              <select name="category" id="expenseCategory" class="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm font-medium bg-white"></select>
+            </label>
+            <label class="text-xs font-medium text-muted">Сумма, ₽
+              <input name="amount" type="number" min="0" step="1" class="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm" required />
+            </label>
+            <label class="text-xs font-medium text-muted sm:col-span-2 lg:col-span-1">Комментарий
+              <input name="note" class="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm" placeholder="Назначение платежа" />
+            </label>
+            <button type="submit" class="rounded-xl bg-accent hover:bg-indigo-600 text-white text-sm font-semibold py-2.5 px-4">Добавить расход</button>
+          </form>
+          <h4 class="text-sm font-bold pt-2">Журнал расходов за месяц</h4>
+          <ul id="hubExpenseLinesList" class="divide-y divide-slate-100 rounded-xl border border-slate-100 overflow-hidden text-sm"></ul>
+
+          <h4 class="text-sm font-bold pt-4">Справочник товаров</h4>
+          <div class="overflow-x-auto rounded-xl border border-slate-100">
+            <table class="w-full text-sm min-w-[960px]">
+              <thead>
+                <tr class="text-left text-muted bg-slate-50/90">
+                  <th class="p-3 font-semibold">Название</th>
+                  <th class="p-3 font-semibold">Артикул</th>
+                  <th class="p-3 font-semibold">Розница</th>
+                  <th class="p-3 font-semibold">Закуп</th>
+                  <th class="p-3 font-semibold">Остаток, шт</th>
+                  <th class="p-3 font-semibold">Прод. за мес., шт</th>
+                  <th class="p-3 font-semibold">Выручка за мес.</th>
+                  <th class="p-3 font-semibold">Остаток ₽ закуп</th>
+                  <th class="p-3 font-semibold">Остаток ₽ розница</th>
+                  <th class="p-3 font-semibold">Кат.</th>
+                  <th class="p-3 font-semibold"></th>
+                </tr>
+              </thead>
+              <tbody id="hubCatalogBody"></tbody>
+            </table>
+          </div>
+          <form id="formCatalog" class="mt-4 grid sm:grid-cols-2 lg:grid-cols-7 gap-2 items-end">
             <input name="name" placeholder="Название" class="rounded-xl border border-slate-200 px-3 py-2 text-sm lg:col-span-2" required />
             <input name="sku" placeholder="Артикул" class="rounded-xl border border-slate-200 px-3 py-2 text-sm" required />
             <input name="retail" type="number" min="0" step="1" placeholder="Розница" class="rounded-xl border border-slate-200 px-3 py-2 text-sm" required />
@@ -332,6 +474,12 @@
             <input name="category" placeholder="Категория" class="rounded-xl border border-slate-200 px-3 py-2 text-sm" />
             <button type="submit" class="lg:col-span-7 rounded-xl bg-brand-600 hover:bg-brand-700 text-white text-sm font-semibold py-2.5">Добавить в справочник</button>
           </form>
+        </div>
+
+        <div class="rounded-2xl border border-red-200/80 bg-red-50/30 p-5 shadow-sm space-y-3 hub-guard hidden">
+          <h3 class="font-bold text-red-900">Опасная зона</h3>
+          <button type="button" id="btnPersist" class="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold shadow-sm hover:bg-slate-50">Сохранить в браузер (localStorage)</button>
+          <button type="button" id="btnResetDemo" class="rounded-xl bg-red-600 hover:bg-red-700 text-white text-sm font-semibold py-2.5 px-4">Сбросить к демо-данным</button>
         </div>
       </section>
 
