@@ -60,8 +60,12 @@ function escapeHtml(s) {
 }
 
 function getYM() {
-  const y = Number(document.getElementById('selectYear').value);
-  const m = Number(document.getElementById('selectMonth').value);
+  const yRaw = Number(document.getElementById('selectYear')?.value);
+  const mRaw = Number(document.getElementById('selectMonth')?.value);
+  let y = Number.isFinite(yRaw) ? yRaw : 2026;
+  let m = Number.isFinite(mRaw) ? mRaw : 4;
+  y = Math.min(2100, Math.max(2000, y));
+  m = Math.min(12, Math.max(1, Math.floor(m)));
   return { y, m };
 }
 
@@ -506,12 +510,17 @@ function setTab(tab) {
 }
 
 function refresh() {
-  const state = getState();
-  renderPeriodHeader();
-  if (activeTab === 'dashboard') renderDashboard(state);
-  else if (activeTab === 'sales') renderSales(state);
-  else if (activeTab === 'expenses') renderExpenses(state);
-  else if (activeTab === 'catalog') renderCatalog(state);
+  try {
+    const state = getState();
+    renderPeriodHeader();
+    if (activeTab === 'dashboard') renderDashboard(state);
+    else if (activeTab === 'sales') renderSales(state);
+    else if (activeTab === 'expenses') renderExpenses(state);
+    else if (activeTab === 'catalog') renderCatalog(state);
+  } catch (e) {
+    console.error(e);
+    showToast(String(e?.message || e), 'error');
+  }
 }
 
 function wireTabs() {
@@ -788,3 +797,5 @@ if (!loaded && !localStorage.getItem(STORAGE_KEY)) persist();
 else if (loaded) persist();
 
 setTab(activeTab);
+
+window.__profitAppReady = true;

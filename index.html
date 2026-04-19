@@ -42,14 +42,42 @@
     .period-glow {
       background: linear-gradient(135deg, rgba(45,157,140,0.1) 0%, rgba(79,70,229,0.08) 100%);
     }
-    #toastHost { transition: opacity .25s ease, transform .25s ease; }
-    #toastHost.toast-show { opacity: 1; transform: translateY(0); }
-    #toastHost.toast-hide { opacity: 0; transform: translateY(-6px); pointer-events: none; }
+    /* Тост не должен перехватывать клики по странице, когда скрыт */
+    #toastHost {
+      transition: opacity .25s ease, transform .25s ease;
+      pointer-events: none;
+      max-width: min(28rem, calc(100% - 2rem));
+    }
+    #toastHost.toast-show {
+      opacity: 1;
+      transform: translate(-50%, 0);
+      pointer-events: auto;
+    }
+    #toastHost.toast-hide {
+      opacity: 0;
+      transform: translate(-50%, -6px);
+      pointer-events: none;
+    }
+    main.app-main { position: relative; z-index: 1; flex: 1 1 0%; min-width: min(100%, 280px); }
   </style>
 </head>
 <body class="bg-surface text-ink antialiased min-h-screen">
 
-<div id="toastHost" class="toast-hide fixed top-4 left-1/2 z-[100] -translate-x-1/2 max-w-md w-[calc(100%-2rem)] rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm font-medium text-ink shadow-lg" role="status"></div>
+<div id="toastHost" class="toast-hide fixed top-4 left-1/2 z-[100] max-w-md rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm font-medium text-ink shadow-lg" role="status" aria-live="polite"></div>
+
+<div id="bootWarn" class="hidden fixed inset-0 z-[200] flex items-center justify-center bg-slate-900/70 p-4">
+  <div class="max-w-lg rounded-2xl bg-white p-6 shadow-2xl text-center">
+    <p class="font-bold text-lg text-ink">Приложение не запустилось</p>
+    <p class="text-sm text-muted mt-2">Скорее всего файл открыт двойным кликом (адрес начинается с <code class="bg-slate-100 px-1 rounded">file://</code>). Браузер тогда не загружает модули JavaScript.</p>
+    <p class="text-sm text-ink mt-4 font-medium">Сделайте так:</p>
+    <ol class="text-left text-sm text-muted mt-2 space-y-2 list-decimal pl-5">
+      <li>Откройте папку проекта в терминале и выполните: <code class="bg-slate-100 px-1 rounded">npm install</code> затем <code class="bg-slate-100 px-1 rounded">npm run dev</code></li>
+      <li>Перейдите по адресу, который покажет Vite (обычно <code class="bg-slate-100 px-1 rounded">http://localhost:5173</code>)</li>
+      <li>Или откройте собранный файл <code class="bg-slate-100 px-1 rounded">dist/index.html</code> через «Live Server» / любой локальный HTTP-сервер</li>
+    </ol>
+    <button type="button" id="bootWarnClose" class="mt-6 rounded-xl bg-brand-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-brand-700">Понятно</button>
+  </div>
+</div>
 
 <div class="flex min-h-screen">
   <aside class="w-56 lg:w-64 shrink-0 bg-slate-900 text-white flex flex-col shadow-xl">
@@ -74,7 +102,7 @@
     </div>
   </aside>
 
-  <main class="flex-1 flex flex-col min-w-0">
+  <main class="app-main flex flex-col min-h-0">
     <header class="period-glow border-b border-slate-200/80 px-5 lg:px-8 py-5">
       <div class="flex flex-col xl:flex-row xl:items-end xl:justify-between gap-4 max-w-6xl mx-auto w-full">
         <div>
@@ -312,5 +340,20 @@
 </div>
 
 <script type="module" src="/src/main.js"></script>
+<script>
+  (function () {
+    function isFile() {
+      return location.protocol === 'file:';
+    }
+    document.getElementById('bootWarnClose')?.addEventListener('click', function () {
+      document.getElementById('bootWarn')?.classList.add('hidden');
+    });
+    window.addEventListener('DOMContentLoaded', function () {
+      if (isFile()) {
+        document.getElementById('bootWarn')?.classList.remove('hidden');
+      }
+    });
+  })();
+</script>
 </body>
 </html>
