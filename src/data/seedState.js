@@ -7,9 +7,9 @@ function uid(prefix) {
 /** Начальное состояние учёта из демо-периодов */
 export function createSeedState() {
   const catalog = [
-    { id: 'cat-seed-a', name: 'Товар A', sku: 'SKU-A', retail: 2200, purchase: 880, category: 'A' },
-    { id: 'cat-seed-b', name: 'Товар B', sku: 'SKU-B', retail: 900, purchase: 650, category: 'C' },
-    { id: 'cat-seed-s', name: 'Услуга «Старт»', sku: 'SRV-1', retail: 4500, purchase: 900, category: 'B' },
+    { id: 'cat-seed-a', name: 'Товар A', sku: 'SKU-A', retail: 2200, purchase: 880, category: 'A', stockQty: 0 },
+    { id: 'cat-seed-b', name: 'Товар B', sku: 'SKU-B', retail: 900, purchase: 650, category: 'C', stockQty: 0 },
+    { id: 'cat-seed-s', name: 'Услуга «Старт»', sku: 'SRV-1', retail: 4500, purchase: 900, category: 'B', stockQty: 0 },
   ];
   const ids = [catalog[0].id, catalog[1].id, catalog[2].id];
 
@@ -67,7 +67,7 @@ export function createSeedState() {
   }
 
   return {
-    version: 2,
+    version: 3,
     catalog,
     months,
     payroll,

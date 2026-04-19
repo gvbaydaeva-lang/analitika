@@ -42,12 +42,24 @@ export function persist() {
   }
 }
 
+function migrateParsed(parsed) {
+  if (!parsed || !Array.isArray(parsed.catalog)) return null;
+  if (parsed.version === 2) {
+    for (const c of parsed.catalog) {
+      if (c.stockQty == null) c.stockQty = 0;
+    }
+    parsed.version = 3;
+  }
+  if (parsed.version !== 3) return null;
+  return parsed;
+}
+
 export function loadFromStorage() {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) return false;
-    const parsed = JSON.parse(raw);
-    if (!parsed || parsed.version !== 2 || !Array.isArray(parsed.catalog)) return false;
+    const parsed = migrateParsed(JSON.parse(raw));
+    if (!parsed) return false;
     state = parsed;
     return true;
   } catch {

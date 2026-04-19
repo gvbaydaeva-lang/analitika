@@ -42,9 +42,14 @@
     .period-glow {
       background: linear-gradient(135deg, rgba(45,157,140,0.1) 0%, rgba(79,70,229,0.08) 100%);
     }
+    #toastHost { transition: opacity .25s ease, transform .25s ease; }
+    #toastHost.toast-show { opacity: 1; transform: translateY(0); }
+    #toastHost.toast-hide { opacity: 0; transform: translateY(-6px); pointer-events: none; }
   </style>
 </head>
 <body class="bg-surface text-ink antialiased min-h-screen">
+
+<div id="toastHost" class="toast-hide fixed top-4 left-1/2 z-[100] -translate-x-1/2 max-w-md w-[calc(100%-2rem)] rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm font-medium text-ink shadow-lg" role="status"></div>
 
 <div class="flex min-h-screen">
   <aside class="w-56 lg:w-64 shrink-0 bg-slate-900 text-white flex flex-col shadow-xl">
@@ -86,6 +91,7 @@
             Год
             <select id="selectYear" class="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium shadow-sm min-w-[96px] focus:ring-2 focus:ring-brand-500/30 outline-none"></select>
           </label>
+          <button type="button" id="btnPersist" class="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-ink shadow-sm hover:bg-slate-50 h-fit">Сохранить</button>
         </div>
       </div>
     </header>
@@ -96,6 +102,13 @@
       <section id="panel-dashboard" class="tab-panel space-y-6">
         <div id="overviewBlocks" class="grid sm:grid-cols-2 gap-3"></div>
         <div id="kpiGrid" class="grid grid-cols-2 lg:grid-cols-4 gap-3"></div>
+        <div>
+          <h3 class="text-sm font-bold text-ink mb-2 flex items-center gap-2">
+            <span class="w-1 h-4 rounded-full bg-accent"></span>
+            Продажи и остатки за выбранный месяц
+          </h3>
+          <div id="inventoryKpiGrid" class="grid grid-cols-2 lg:grid-cols-5 gap-3"></div>
+        </div>
         <div class="grid lg:grid-cols-2 gap-5">
           <div class="rounded-2xl border border-slate-200/80 bg-card p-5 shadow-sm">
             <h3 class="font-bold text-ink">Выручка и чистая прибыль по месяцам</h3>
@@ -129,11 +142,14 @@
               <thead>
                 <tr class="text-left text-muted bg-slate-50/90">
                   <th class="p-3 font-semibold">Товар</th>
-                  <th class="p-3 font-semibold">Шт.</th>
-                  <th class="p-3 font-semibold">Розница</th>
-                  <th class="p-3 font-semibold">Закуп</th>
-                  <th class="p-3 font-semibold">Выручка</th>
+                  <th class="p-3 font-semibold">Продано, шт</th>
+                  <th class="p-3 font-semibold">Продано, ₽</th>
+                  <th class="p-3 font-semibold">Розница/ед.</th>
+                  <th class="p-3 font-semibold">Закуп/ед.</th>
                   <th class="p-3 font-semibold">COGS</th>
+                  <th class="p-3 font-semibold">Остаток, шт</th>
+                  <th class="p-3 font-semibold">Остаток ₽ закуп</th>
+                  <th class="p-3 font-semibold">Остаток ₽ розница</th>
                 </tr>
               </thead>
               <tbody id="salesQtyBody"></tbody>
@@ -171,6 +187,11 @@
               <thead>
                 <tr class="text-left text-muted bg-slate-50/90">
                   <th class="p-3 font-semibold">SKU</th>
+                  <th class="p-3 font-semibold">Прод., шт</th>
+                  <th class="p-3 font-semibold">Выручка</th>
+                  <th class="p-3 font-semibold">Ост., шт</th>
+                  <th class="p-3 font-semibold">Ост. ₽ закуп</th>
+                  <th class="p-3 font-semibold">Ост. ₽ розница</th>
                   <th class="p-3 font-semibold">Маржа %</th>
                   <th class="p-3 font-semibold">Маркет./ед.</th>
                   <th class="p-3 font-semibold">Вклад/ед.</th>
@@ -244,16 +265,29 @@
       <!-- Справочник -->
       <section id="panel-catalog" class="tab-panel hidden space-y-6">
         <div class="rounded-2xl border border-slate-200/80 bg-card p-5 shadow-sm">
-          <h3 class="font-bold">Товары и услуги</h3>
-          <p class="text-xs text-muted mt-1">Розничная и закупочная цена за единицу.</p>
+          <div class="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
+            <div>
+              <h3 class="font-bold">Товары и услуги</h3>
+              <p class="text-xs text-muted mt-1">Розничная и закупочная цена, остатки. Колонки «за месяц» — для выбранного в шапке периода.</p>
+            </div>
+            <div class="flex flex-wrap gap-2 shrink-0">
+              <input type="file" id="importCatalogFile" accept=".csv,.txt,.xlsx,.xls" class="hidden" />
+              <button type="button" id="btnImportCatalog" class="rounded-xl bg-accentsoft text-accent border border-indigo-200 px-4 py-2 text-sm font-semibold hover:bg-indigo-100">Импорт из Excel/CSV</button>
+            </div>
+          </div>
           <div class="overflow-x-auto mt-4 rounded-xl border border-slate-100">
-            <table class="w-full text-sm min-w-[640px]">
+            <table class="w-full text-sm min-w-[960px]">
               <thead>
                 <tr class="text-left text-muted bg-slate-50/90">
                   <th class="p-3 font-semibold">Название</th>
                   <th class="p-3 font-semibold">Артикул</th>
                   <th class="p-3 font-semibold">Розница</th>
                   <th class="p-3 font-semibold">Закуп</th>
+                  <th class="p-3 font-semibold">Остаток, шт</th>
+                  <th class="p-3 font-semibold">Прод. за мес., шт</th>
+                  <th class="p-3 font-semibold">Выручка за мес.</th>
+                  <th class="p-3 font-semibold">Остаток ₽ закуп</th>
+                  <th class="p-3 font-semibold">Остаток ₽ розница</th>
                   <th class="p-3 font-semibold">Кат.</th>
                   <th class="p-3 font-semibold"></th>
                 </tr>
@@ -261,13 +295,14 @@
               <tbody id="catalogBody"></tbody>
             </table>
           </div>
-          <form id="formCatalog" class="mt-5 grid sm:grid-cols-2 lg:grid-cols-6 gap-2 items-end">
+          <form id="formCatalog" class="mt-5 grid sm:grid-cols-2 lg:grid-cols-7 gap-2 items-end">
             <input name="name" placeholder="Название" class="rounded-xl border border-slate-200 px-3 py-2 text-sm lg:col-span-2" required />
             <input name="sku" placeholder="Артикул" class="rounded-xl border border-slate-200 px-3 py-2 text-sm" required />
             <input name="retail" type="number" min="0" step="1" placeholder="Розница" class="rounded-xl border border-slate-200 px-3 py-2 text-sm" required />
             <input name="purchase" type="number" min="0" step="1" placeholder="Закуп" class="rounded-xl border border-slate-200 px-3 py-2 text-sm" required />
+            <input name="stockQty" type="number" min="0" step="1" placeholder="Остаток, шт" class="rounded-xl border border-slate-200 px-3 py-2 text-sm" />
             <input name="category" placeholder="Категория" class="rounded-xl border border-slate-200 px-3 py-2 text-sm" />
-            <button type="submit" class="lg:col-span-6 rounded-xl bg-brand-600 hover:bg-brand-700 text-white text-sm font-semibold py-2.5">Добавить в справочник</button>
+            <button type="submit" class="lg:col-span-7 rounded-xl bg-brand-600 hover:bg-brand-700 text-white text-sm font-semibold py-2.5">Добавить в справочник</button>
           </form>
         </div>
       </section>

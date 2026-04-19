@@ -8,6 +8,9 @@ import {
   EXPENSE_CATEGORIES,
   periodKey,
 } from './aggregates.js';
+import { ensureMonth, getMergedSales, writeMergedSales } from './domain/monthModel.js';
+import { parseImportFile } from './data/importParse.js';
+import { dataRepository } from './data/repository.js';
 
 let chartProfit = null;
 let chartPie = null;
@@ -57,32 +60,34 @@ function escapeHtml(s) {
 }
 
 function getYM() {
-  const y = +document.getElementById('selectYear').value;
-  const m = +document.getElementById('selectMonth').value;
+  const y = Number(document.getElementById('selectYear').value);
+  const m = Number(document.getElementById('selectMonth').value);
   return { y, m };
 }
 
-function ensureMonth(state, key) {
-  if (!state.months[key]) {
-    state.months[key] = { orders: 0, channels: [], sales: [] };
-  }
-  return state.months[key];
+const PERIOD_M_KEY = 'profitPeriodM';
+const PERIOD_Y_KEY = 'profitPeriodY';
+
+function savePeriodSelection() {
+  const { y, m } = getYM();
+  sessionStorage.setItem(PERIOD_M_KEY, String(m));
+  sessionStorage.setItem(PERIOD_Y_KEY, String(y));
 }
 
-/** Список продаж по справочнику (без побочных эффектов) */
-function getMergedSales(state, key) {
-  const month = state.months[key] || { sales: [] };
-  const lines = [...(month.sales || [])];
-  const ids = new Set(lines.map((l) => l.catalogId));
-  for (const p of state.catalog) {
-    if (!ids.has(p.id)) lines.push({ catalogId: p.id, qty: 0 });
-  }
-  return lines;
-}
-
-function writeMergedSales(draft, key) {
-  ensureMonth(draft, key);
-  draft.months[key].sales = getMergedSales(draft, key);
+let toastTimer = null;
+function showToast(message, variant = 'ok') {
+  const el = document.getElementById('toastHost');
+  if (!el) return;
+  el.textContent = message;
+  el.className =
+    variant === 'error'
+      ? 'fixed top-4 left-1/2 z-[100] -translate-x-1/2 max-w-md w-[calc(100%-2rem)] rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-medium text-red-900 shadow-lg toast-show'
+      : 'fixed top-4 left-1/2 z-[100] -translate-x-1/2 max-w-md w-[calc(100%-2rem)] rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-900 shadow-lg toast-show';
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => {
+    el.classList.remove('toast-show');
+    el.classList.add('toast-hide');
+  }, 3200);
 }
 
 function destroyCharts() {
@@ -186,15 +191,44 @@ function renderPeriodHeader() {
   const { y, m } = getYM();
   document.getElementById('periodTitle').textContent = `${MONTH_NAMES[m - 1]} ${y}`;
   document.getElementById('periodSubtitle').textContent =
-    'Данные учёта за выбранный месяц. Изменения сохраняются в браузере автоматически.';
+    `Фильтр периода: ${MONTH_NAMES[m - 1]} ${y}. Дашборд, продажи, расходы и колонки «за месяц» в справочнике считаются только за этот месяц. Данные сохраняются в браузере (localStorage).`;
+}
+
+function renderInventoryKpis(data) {
+  const inv = data.inventory || {};
+  const items = [
+    { label: 'Продано, шт', value: String(inv.soldPieces ?? 0), sub: 'за месяц' },
+    { label: 'Выручка', value: money(inv.soldRevenueRub ?? 0), sub: 'розница × шт' },
+    { label: 'Остаток, шт', value: String(inv.stockPieces ?? 0), sub: 'по справочнику' },
+    { label: 'Остаток ₽ закуп', value: money(inv.stockRubPurchase ?? 0), sub: 'по себестоимости' },
+    { label: 'Остаток ₽ розница', value: money(inv.stockRubRetail ?? 0), sub: 'потенциальная выручка' },
+  ];
+  const grid = document.getElementById('inventoryKpiGrid');
+  if (!grid) return;
+  grid.innerHTML = items
+    .map(
+      (k) => `
+    <div class="rounded-2xl border border-slate-200/80 bg-white p-4 shadow-sm">
+      <p class="text-[11px] font-semibold text-muted uppercase tracking-wide">${k.label}</p>
+      <p class="text-lg font-bold text-ink mt-1">${k.value}</p>
+      <p class="text-[11px] text-muted mt-0.5">${k.sub}</p>
+    </div>`
+    )
+    .join('');
 }
 
 function renderOverview(data) {
+  const inv = data.inventory || {};
   const blocks = [
     {
       title: 'Выручка и валовая маржа',
       summary: `${money(data.revenue)} · валовая ${money(data.grossProfit)}`,
       body: `COGS ${money(data.cogs)} (${pct(data.purchaseShare * 100)} от выручки). Динамика выручки: ${deltaBadge(data.revDeltaPct)}`,
+    },
+    {
+      title: 'Продажи и остатки (за выбранный месяц)',
+      summary: `${inv.soldPieces ?? 0} шт продано · остаток ${inv.stockPieces ?? 0} шт`,
+      body: `Выручка от продаж: ${money(inv.soldRevenueRub ?? 0)}. Остатки по закупу: ${money(inv.stockRubPurchase ?? 0)}; по рознице (потенциал): ${money(inv.stockRubRetail ?? 0)}.`,
     },
     {
       title: 'Маркетинг',
@@ -285,6 +319,7 @@ function renderDashboard(state) {
   renderPeriodHeader();
   renderOverview(data);
   renderKpis(data);
+  renderInventoryKpis(data);
   updateCharts(state);
 }
 
@@ -303,13 +338,19 @@ function renderSales(state) {
         const p = state.catalog.find((c) => c.id === line.catalogId);
         if (!p) return '';
         const qty = Number(line.qty) || 0;
+        const stock = Math.max(0, Math.floor(Number(p.stockQty) || 0));
+        const stCost = stock * (Number(p.purchase) || 0);
+        const stRet = stock * (Number(p.retail) || 0);
         return `<tr class="border-t border-slate-100">
         <td class="p-3 font-medium">${escapeHtml(p.name)}</td>
         <td class="p-3"><input type="number" min="0" step="1" data-sale-qty data-catalog-id="${p.id}" value="${qty}" class="w-24 rounded-lg border border-slate-200 px-2 py-1 text-sm" /></td>
+        <td class="p-3 font-medium">${money(qty * p.retail)}</td>
         <td class="p-3">${money(p.retail)}</td>
         <td class="p-3">${money(p.purchase)}</td>
-        <td class="p-3">${money(qty * p.retail)}</td>
         <td class="p-3">${money(qty * p.purchase)}</td>
+        <td class="p-3">${stock}</td>
+        <td class="p-3">${money(stCost)}</td>
+        <td class="p-3">${money(stRet)}</td>
       </tr>`;
       })
       .join('');
@@ -344,6 +385,11 @@ function renderSales(state) {
       .map(
         (p) => `<tr class="border-t border-slate-100">
       <td class="p-3">${escapeHtml(p.sku)} <span class="text-muted text-xs">(${escapeHtml(p.cat)})</span></td>
+      <td class="p-3">${p.soldQty}</td>
+      <td class="p-3 font-medium">${money(p.soldRevenue)}</td>
+      <td class="p-3">${p.stockQty}</td>
+      <td class="p-3">${money(p.stockValueCost)}</td>
+      <td class="p-3">${money(p.stockValueRetail)}</td>
       <td class="p-3 font-medium">${p.marginPct.toFixed(0)}%</td>
       <td class="p-3">${money(p.mktPerUnit)}</td>
       <td class="p-3 font-semibold ${p.contribPerUnit >= 0 ? 'text-up' : 'text-down'}">${money(p.contribPerUnit)}</td>
@@ -413,20 +459,34 @@ function renderExpenses(state) {
 }
 
 function renderCatalog(state) {
+  const { y, m } = getYM();
+  const key = periodKey(y, m);
   renderPeriodHeader();
+  const merged = getMergedSales(state, key);
   const body = document.getElementById('catalogBody');
   if (!body) return;
   body.innerHTML = state.catalog
-    .map(
-      (p) => `<tr class="border-t border-slate-100">
-    <td class="p-2"><input data-cat-name="${p.id}" class="w-full max-w-[220px] rounded-lg border border-slate-200 px-2 py-1 text-sm" value="${escAttr(p.name)}" /></td>
-    <td class="p-2"><input data-cat-sku="${p.id}" class="w-28 rounded-lg border border-slate-200 px-2 py-1 text-sm" value="${escAttr(p.sku)}" /></td>
-    <td class="p-2"><input type="number" data-cat-retail="${p.id}" class="w-28 rounded-lg border border-slate-200 px-2 py-1 text-sm" value="${p.retail}" /></td>
-    <td class="p-2"><input type="number" data-cat-purchase="${p.id}" class="w-28 rounded-lg border border-slate-200 px-2 py-1 text-sm" value="${p.purchase}" /></td>
-    <td class="p-2"><input data-cat-cat="${p.id}" class="w-20 rounded-lg border border-slate-200 px-2 py-1 text-sm" value="${escAttr(p.category || '')}" /></td>
+    .map((p) => {
+      const line = merged.find((l) => l.catalogId === p.id);
+      const sold = Number(line?.qty) || 0;
+      const stock = Math.max(0, Math.floor(Number(p.stockQty) || 0));
+      const revM = sold * (Number(p.retail) || 0);
+      const stCost = stock * (Number(p.purchase) || 0);
+      const stRet = stock * (Number(p.retail) || 0);
+      return `<tr class="border-t border-slate-100">
+    <td class="p-2"><input data-cat-name="${p.id}" class="w-full max-w-[200px] rounded-lg border border-slate-200 px-2 py-1 text-sm" value="${escAttr(p.name)}" /></td>
+    <td class="p-2"><input data-cat-sku="${p.id}" class="w-24 rounded-lg border border-slate-200 px-2 py-1 text-sm" value="${escAttr(p.sku)}" /></td>
+    <td class="p-2"><input type="number" data-cat-retail="${p.id}" class="w-24 rounded-lg border border-slate-200 px-2 py-1 text-sm" value="${p.retail}" /></td>
+    <td class="p-2"><input type="number" data-cat-purchase="${p.id}" class="w-24 rounded-lg border border-slate-200 px-2 py-1 text-sm" value="${p.purchase}" /></td>
+    <td class="p-2"><input type="number" min="0" step="1" data-cat-stock="${p.id}" class="w-20 rounded-lg border border-slate-200 px-2 py-1 text-sm" value="${stock}" /></td>
+    <td class="p-2 text-sm font-medium">${sold}</td>
+    <td class="p-2 text-sm font-medium">${money(revM)}</td>
+    <td class="p-2 text-sm">${money(stCost)}</td>
+    <td class="p-2 text-sm">${money(stRet)}</td>
+    <td class="p-2"><input data-cat-cat="${p.id}" class="w-16 rounded-lg border border-slate-200 px-2 py-1 text-sm" value="${escAttr(p.category || '')}" /></td>
     <td class="p-2"><button type="button" data-del-catalog="${p.id}" class="text-xs text-red-600 hover:underline">Удалить</button></td>
-  </tr>`
-    )
+  </tr>`;
+    })
     .join('');
 }
 
@@ -461,8 +521,12 @@ function wireTabs() {
 }
 
 function wirePeriod() {
-  document.getElementById('selectMonth').addEventListener('change', refresh);
-  document.getElementById('selectYear').addEventListener('change', refresh);
+  const onChange = () => {
+    savePeriodSelection();
+    refresh();
+  };
+  document.getElementById('selectMonth').addEventListener('change', onChange);
+  document.getElementById('selectYear').addEventListener('change', onChange);
 }
 
 function initSelects() {
@@ -482,8 +546,10 @@ function initSelects() {
     o.textContent = String(year);
     yearSel.appendChild(o);
   });
-  monthSel.value = '4';
-  yearSel.value = '2026';
+  const sm = sessionStorage.getItem(PERIOD_M_KEY);
+  const sy = sessionStorage.getItem(PERIOD_Y_KEY);
+  monthSel.value = sm && [...monthSel.options].some((o) => o.value === sm) ? sm : '4';
+  yearSel.value = sy && [...yearSel.options].some((o) => o.value === sy) ? sy : '2026';
 }
 
 function wireSales() {
@@ -617,6 +683,7 @@ function wireCatalog() {
         retail: Math.max(0, Number(fd.get('retail')) || 0),
         purchase: Math.max(0, Number(fd.get('purchase')) || 0),
         category: String(fd.get('category') || '').trim() || '—',
+        stockQty: Math.max(0, Math.floor(Number(fd.get('stockQty')) || 0)),
       });
       for (const k of Object.keys(s.months)) {
         writeMergedSales(s, k);
@@ -632,6 +699,7 @@ function wireCatalog() {
       t.getAttribute('data-cat-sku') ||
       t.getAttribute('data-cat-retail') ||
       t.getAttribute('data-cat-purchase') ||
+      t.getAttribute('data-cat-stock') ||
       t.getAttribute('data-cat-cat');
     if (!id) return;
     patchState((s) => {
@@ -641,6 +709,7 @@ function wireCatalog() {
       if (t.matches('[data-cat-sku]')) p.sku = t.value;
       if (t.matches('[data-cat-retail]')) p.retail = Math.max(0, Number(t.value) || 0);
       if (t.matches('[data-cat-purchase]')) p.purchase = Math.max(0, Number(t.value) || 0);
+      if (t.matches('[data-cat-stock]')) p.stockQty = Math.max(0, Math.floor(Number(t.value) || 0));
       if (t.matches('[data-cat-cat]')) p.category = t.value;
     });
   });
@@ -669,6 +738,39 @@ function wireReset() {
   });
 }
 
+function wirePersist() {
+  document.getElementById('btnPersist')?.addEventListener('click', async () => {
+    await dataRepository.flush();
+    showToast('Данные сохранены в этом браузере (localStorage).');
+  });
+}
+
+function wireImportCatalog() {
+  const btn = document.getElementById('btnImportCatalog');
+  const input = document.getElementById('importCatalogFile');
+  if (!btn || !input) return;
+  btn.addEventListener('click', () => input.click());
+  input.addEventListener('change', async () => {
+    const file = input.files?.[0];
+    input.value = '';
+    if (!file) return;
+    try {
+      const rows = await parseImportFile(file);
+      if (!rows.length) {
+        showToast('В файле не найдено строк для импорта.', 'error');
+        return;
+      }
+      const { y, m } = getYM();
+      const key = periodKey(y, m);
+      await dataRepository.importCatalogRows(rows, key);
+      showToast(`Импорт выполнен: ${rows.length} строк. Период: ${MONTH_NAMES[m - 1]} ${y}.`);
+      setTab('catalog');
+    } catch (err) {
+      showToast(err?.message || 'Ошибка импорта файла', 'error');
+    }
+  });
+}
+
 subscribe(() => refresh());
 
 initSelects();
@@ -678,8 +780,11 @@ wireSales();
 wireExpenses();
 wireCatalog();
 wireReset();
+wirePersist();
+wireImportCatalog();
 
-loadFromStorage();
-if (!localStorage.getItem(STORAGE_KEY)) persist();
+const loaded = loadFromStorage();
+if (!loaded && !localStorage.getItem(STORAGE_KEY)) persist();
+else if (loaded) persist();
 
 setTab(activeTab);

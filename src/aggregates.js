@@ -72,9 +72,10 @@ export function computeMonth(state, y, m) {
   const marketingTotal = marketingChannels + marketingExtra;
   const grossProfit = revenue - cogs;
 
-  const mktAlloc = revenue > 0 ? marketingTotal : 0;
+  let soldPieces = 0;
   const enrichedProducts = saleRows.map((row) => {
     const { product: p, qty, lineRev, lineCogs } = row;
+    soldPieces += qty;
     const share = revenue > 0 ? lineRev / revenue : 0;
     const mktOnLine = share * marketingTotal;
     const mktPerUnit = qty > 0 ? mktOnLine / qty : 0;
@@ -82,6 +83,9 @@ export function computeMonth(state, y, m) {
     const marginPct = p.retail ? (grossPerUnit / p.retail) * 100 : 0;
     const contribPerUnit = grossPerUnit - mktPerUnit;
     const contribTotal = contribPerUnit * qty;
+    const stockQty = Math.max(0, Math.floor(Number(p.stockQty) || 0));
+    const stockValueCost = stockQty * (Number(p.purchase) || 0);
+    const stockValueRetail = stockQty * (Number(p.retail) || 0);
     return {
       sku: p.name,
       cat: p.category,
@@ -95,8 +99,31 @@ export function computeMonth(state, y, m) {
       mktPerUnit,
       contribPerUnit,
       contribTotal,
+      stockQty,
+      stockValueCost,
+      stockValueRetail,
+      soldQty: qty,
+      soldRevenue: lineRev,
     };
   });
+
+  let stockPieces = 0;
+  let stockRubPurchase = 0;
+  let stockRubRetail = 0;
+  for (const p of state.catalog || []) {
+    const sq = Math.max(0, Math.floor(Number(p.stockQty) || 0));
+    stockPieces += sq;
+    stockRubPurchase += sq * (Number(p.purchase) || 0);
+    stockRubRetail += sq * (Number(p.retail) || 0);
+  }
+
+  const inventory = {
+    soldPieces,
+    soldRevenueRub: revenue,
+    stockPieces,
+    stockRubPurchase,
+    stockRubRetail,
+  };
 
   const channels = (month.channels || []).map((c) => {
     const spend = Number(c.spend) || 0;
@@ -146,6 +173,7 @@ export function computeMonth(state, y, m) {
       utilities: utilitiesExtra,
       other: otherExtra,
     },
+    inventory,
   };
 }
 
