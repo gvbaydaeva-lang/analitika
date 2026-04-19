@@ -1,0 +1,19 @@
+# Зависимости и сборка
+node_modules/
+dist/
+
+# Логи и кэш
+*.log
+npm-debug.log*
+.vite/
+
+# ОС и IDE
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/*
+!.vscode/extensions.json
+
+# Env (если появятся секреты)
+.env
+.env.*.local
