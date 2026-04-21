@@ -18,12 +18,44 @@ import {
   profitSeries,
   MONTH_NAMES,
   EXPENSE_CATEGORIES,
+  MARKETING_SEGMENTS,
   periodKey,
   buildPaymentCalendarMatrix,
+  computeMarketingRollup,
 } from './aggregates.js';
+import { createIcons, LayoutDashboard, Receipt, Megaphone, Package, CalendarDays, Settings, Plus, Cloud, Sparkles } from 'lucide';
+import {
+  startGoogleOAuthPkce,
+  exchangeCodeForTokens,
+  readOAuthReturnParams,
+  clearOAuthParamsFromUrl,
+  fetchSpreadsheetValues,
+  rowsToExpenseDrafts,
+} from './integrations/googleSheets.js';
 import { ensureMonth, getMergedSales, writeMergedSales } from './domain/monthModel.js';
 import { parseImportFile } from './data/importParse.js';
 import { dataRepository } from './data/repository.js';
+import { defaultGoogleSheets } from './data/seedState.js';
+
+const LUCIDE_ICONS = {
+  LayoutDashboard,
+  Receipt,
+  Megaphone,
+  Package,
+  CalendarDays,
+  Settings,
+  Plus,
+  Cloud,
+  Sparkles,
+};
+
+function paintLucideIcons() {
+  try {
+    createIcons({ icons: LUCIDE_ICONS, attrs: { width: 18, height: 18, 'stroke-width': 1.75 } });
+  } catch (e) {
+    console.warn('Lucide icons', e);
+  }
+}
 
 let chartProfit = null;
 let chartPie = null;
@@ -150,15 +182,15 @@ function updateCharts(state) {
           label: 'Выручка',
           data: series.revenues,
           borderColor: 'rgb(45, 157, 140)',
-          backgroundColor: 'rgba(45, 157, 140, 0.12)',
+          backgroundColor: 'rgba(45, 157, 140, 0.1)',
           tension: 0.25,
           fill: true,
         },
         {
           label: 'Чистая прибыль',
           data: series.profits,
-          borderColor: 'rgb(79, 70, 229)',
-          backgroundColor: 'rgba(79, 70, 229, 0.08)',
+          borderColor: 'rgb(99, 102, 241)',
+          backgroundColor: 'rgba(99, 102, 241, 0.1)',
           tension: 0.25,
           fill: true,
         },
@@ -185,7 +217,7 @@ function updateCharts(state) {
     pie.utilities,
     pie.other,
   ];
-  const colors = ['#94a3b8', '#2d9d8c', '#6366f1', '#f59e0b', '#38bdf8', '#cbd5e1'];
+  const colors = ['#94a3b8', '#2d9d8c', '#6366F1', '#f59e0b', '#38bdf8', '#cbd5e1'];
   const sum = data.reduce((a, b) => a + b, 0);
   chartPie = new Chart(elD, {
     type: 'doughnut',
@@ -266,7 +298,7 @@ function renderPaymentCalendar(state) {
       maximumFractionDigits: 0,
     }).format(Number(v) || 0);
   const ths = [
-    '<th class="p-2 text-left font-semibold text-muted sticky left-0 bg-slate-50 z-10 min-w-[160px] border-b border-slate-200">Категория</th>',
+    '<th class="sticky-col sticky left-0 z-20 p-2 text-left text-xs font-semibold text-muted bg-slate-100 border-b border-slate-200 min-w-[168px] shadow-[2px_0_6px_rgba(15,23,42,0.06)]">Категория</th>',
   ].concat(
     mat.dayLabels.map(
       (d, i) =>
@@ -276,17 +308,21 @@ function renderPaymentCalendar(state) {
   const rowHtml = mat.rows.map((r) => {
     const tds = r.cells.map((cell, i) => {
       const gap = mat.gapCols[i] ? 'cal-col-gap' : '';
-      return `<td class="p-1.5 text-right text-[11px] border-t border-slate-100 ${gap}">${fmt(cell)}</td>`;
+      const v = Math.round(Number(cell) || 0);
+      const inner = r.editable
+        ? `<input type="number" min="0" step="1" data-cal-cell="1" data-cal-cat="${escAttr(r.id)}" data-cal-date="${escAttr(mat.dates[i])}" value="${v}" class="w-full min-w-[64px] rounded-md border border-slate-200 bg-white px-1 py-0.5 text-right text-[11px]" />`
+        : fmt(cell);
+      return `<td class="p-0.5 border-t border-slate-100 ${gap}">${inner}</td>`;
     });
-    return `<tr><td class="p-2 text-xs font-medium sticky left-0 bg-white border-t border-slate-100">${escapeHtml(r.label)}</td>${tds.join('')}</tr>`;
+    return `<tr><td class="sticky-col sticky left-0 z-10 p-2 text-xs font-medium bg-white border-t border-slate-100 shadow-[2px_0_6px_rgba(15,23,42,0.04)]">${escapeHtml(r.label)}</td>${tds.join('')}</tr>`;
   });
-  const totalRow = `<tr class="text-muted"><td class="p-2 text-xs font-semibold sticky left-0 bg-white border-t border-slate-100">Всего списаний / день</td>${mat.dailyTotal
-    .map((v, i) => `<td class="p-1.5 text-right text-[11px] border-t border-slate-100 ${mat.gapCols[i] ? 'cal-col-gap' : ''}">${fmt(v)}</td>`)
+  const totalRow = `<tr class="text-muted bg-slate-50/50"><td class="sticky-col sticky left-0 z-10 p-2 text-xs font-semibold bg-slate-50 border-t border-slate-200">Всего / день</td>${mat.dailyTotal
+    .map((v, i) => `<td class="p-1.5 text-right text-[11px] border-t border-slate-200 ${mat.gapCols[i] ? 'cal-col-gap' : ''}">${fmt(v)}</td>`)
     .join('')}</tr>`;
-  const balRow = `<tr class="font-semibold bg-slate-50/90"><td class="p-2 text-xs sticky left-0 bg-slate-50/90 border-t border-slate-200">Остаток кассы (после дня)</td>${mat.balances
+  const balRow = `<tr class="font-semibold bg-slate-100"><td class="sticky-col sticky left-0 z-10 p-2 text-xs bg-slate-100 border-t border-slate-200">Остаток кассы</td>${mat.balances
     .map((b, i) => `<td class="p-1.5 text-right text-[11px] border-t border-slate-200 ${mat.gapCols[i] ? 'cal-col-gap' : ''}">${fmt(b)}</td>`)
     .join('')}</tr>`;
-  wrap.innerHTML = `<table class="text-ink border-collapse min-w-max w-full"><thead><tr>${ths.join('')}</tr></thead><tbody>${rowHtml.join('')}${totalRow}${balRow}</tbody></table>`;
+  wrap.innerHTML = `<table class="cal-zebra text-ink border-collapse min-w-max w-full"><thead><tr>${ths.join('')}</tr></thead><tbody>${rowHtml.join('')}${totalRow}${balRow}</tbody></table>`;
 }
 
 function formatSourceDate(iso) {
@@ -346,7 +382,7 @@ function renderInventoryKpis(data) {
   grid.innerHTML = items
     .map(
       (k) => `
-    <div class="rounded-2xl border border-slate-200/80 bg-white p-4 shadow-sm">
+    <div class="fin-card p-4">
       <p class="text-[11px] font-semibold text-muted uppercase tracking-wide">${k.label}</p>
       <p class="text-lg font-bold text-ink mt-1">${k.value}</p>
       <p class="text-[11px] text-muted mt-0.5">${k.sub}</p>
@@ -389,7 +425,7 @@ function renderOverview(data) {
   el.innerHTML = blocks
     .map(
       (b, i) => `
-    <details class="rounded-2xl border border-slate-200/80 bg-card shadow-sm overflow-hidden">
+    <details class="fin-card overflow-hidden">
       <summary class="cursor-pointer p-4 flex gap-3 items-start list-none hover:bg-slate-50/80">
         <span class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-brand-50 text-brand-600 text-sm font-bold">${i + 1}</span>
         <div class="min-w-0 flex-1">
@@ -420,7 +456,7 @@ function renderKpis(data) {
       const bgClass = k.delta === 0 ? 'bg-slate-100' : isUp ? 'bg-upbg' : 'bg-downbg';
       const arrow = k.delta > 0 ? '▲' : k.delta < 0 ? '▼' : '—';
       return `
-      <div class="rounded-2xl border border-slate-200/80 bg-card p-4 shadow-sm relative overflow-hidden">
+      <div class="fin-card p-4 relative overflow-hidden">
         <p class="text-xs text-muted font-medium">${k.label}</p>
         <p class="text-lg font-bold mt-1">${k.value}</p>
         <p class="text-xs mt-2 inline-flex font-semibold ${colorClass} ${bgClass} px-2 py-1 rounded-lg">${arrow} ${k.delta === 0 ? 'к пр. мес.' : `${Math.abs(k.delta).toFixed(1)}%`}</p>
@@ -442,7 +478,7 @@ function renderBusinessMetrics(data) {
   grid.innerHTML = items
     .map(
       (k) => `
-    <div class="rounded-2xl border border-slate-200/80 bg-white p-4 shadow-sm">
+    <div class="fin-card p-4">
       <p class="text-xs text-muted">${k.label}</p>
       <p class="text-lg font-bold mt-1">${k.value}</p>
       <p class="text-[11px] text-muted mt-1">${k.sub}</p>
@@ -485,11 +521,111 @@ function renderBusinessUnit(data) {
     .join('');
 }
 
+function renderSmartInsights(data) {
+  const host = document.getElementById('smartInsightsHost');
+  if (!host) return;
+  const items = [];
+  const runway = data.runwayMonths;
+  if (Number.isFinite(runway) && runway < 2) {
+    items.push({
+      tone: 'warn',
+      title: 'Запас денег (Runway)',
+      text: `Осталось менее 2 месяцев при текущем burn rate (${runway.toFixed(1)} мес). Стоит пересмотреть расходы или приток ликвидности.`,
+    });
+  }
+  if (data.burnDeltaPct > 10) {
+    items.push({
+      tone: 'alert',
+      title: 'Burn rate вырос',
+      text: `Скорость «сжигания» денег выросла на ${data.burnDeltaPct.toFixed(0)}% к прошлому месяцу. Проверьте структуру OPEX.`,
+    });
+  }
+  const romiChamp = (data.channels || []).some((c) => (Number(c.romi) || 0) >= 3);
+  if (romiChamp) {
+    items.push({
+      tone: 'ok',
+      title: '🚀 Сильный ROMI',
+      text: 'Есть каналы с ROMI выше 300% (отношение выручки к расходу на рекламу ≥ 3). Имеет смысл масштабировать эти связки.',
+    });
+  }
+  if (!items.length) {
+    host.innerHTML = `
+      <div class="flex items-start gap-3">
+        <span class="mt-0.5 text-accent"><i data-lucide="sparkles" class="w-5 h-5"></i></span>
+        <div>
+          <p class="font-bold text-ink">Smart Insights</p>
+          <p class="text-sm text-muted mt-1">Пока без критичных сигналов по Runway, Burn rate и ROMI. Продолжайте собирать данные по месяцам.</p>
+        </div>
+      </div>`;
+    paintLucideIcons();
+    return;
+  }
+  const toneClass = { warn: 'border-amber-200 bg-amber-50/80', alert: 'border-orange-200 bg-orange-50/80', ok: 'border-emerald-200 bg-emerald-50/80' };
+  host.innerHTML = `
+    <p class="font-bold text-ink flex items-center gap-2"><i data-lucide="sparkles" class="w-5 h-5 text-accent"></i> Smart Insights</p>
+    <ul class="mt-3 space-y-2">${items
+      .map(
+        (it) => `
+      <li class="rounded-xl border px-3 py-2.5 text-sm ${toneClass[it.tone] || 'border-slate-200 bg-white'}">
+        <span class="font-semibold text-ink">${escapeHtml(it.title)}</span>
+        <span class="text-muted block mt-0.5">${escapeHtml(it.text)}</span>
+      </li>`
+      )
+      .join('')}</ul>`;
+  paintLucideIcons();
+}
+
+function renderMarketing(state) {
+  const host = document.getElementById('marketingRollupHost');
+  if (!host) return;
+  const { y, m } = getYM();
+  const { segments, monthDim } = computeMarketingRollup(state, y, m);
+  const blocks = segments
+    .map((s) => {
+      const chRows = s.channels
+        .map(
+          (c) => `
+        <tr class="border-t border-slate-100">
+          <td class="p-2 font-medium">${escapeHtml(c.name)}</td>
+          <td class="p-2 text-right">${money(c.revenue)}</td>
+          <td class="p-2 text-right">${money(c.spend)}</td>
+          <td class="p-2 text-right text-muted">${money(c.cogsAlloc || 0)}</td>
+          <td class="p-2 text-right text-muted">${money(c.taxAlloc || 0)}</td>
+          <td class="p-2 text-right font-semibold ${(c.netProfitChannel || 0) >= 0 ? 'text-emerald-700' : 'text-red-700'}">${money(c.netProfitChannel || 0)}</td>
+        </tr>`
+        )
+        .join('');
+      return `
+      <div>
+        <h4 class="text-sm font-bold text-ink flex items-center gap-2"><span class="w-1 h-3 rounded-full bg-accent"></span>${escapeHtml(s.def.group)} · ${escapeHtml(s.def.label)}</h4>
+        <p class="text-xs text-muted mt-1">Итого по сегменту: выручка ${money(s.revenue)}, расход ${money(s.spend)}, чистая на канал (сумма) <span class="font-semibold ${s.netProfitChannel >= 0 ? 'text-emerald-700' : 'text-red-700'}">${money(s.netProfitChannel)}</span></p>
+        <div class="overflow-x-auto mt-2 rounded-xl border border-slate-100">
+          <table class="w-full text-sm min-w-[720px]">
+            <thead><tr class="text-left text-muted bg-slate-50/90 text-xs">
+              <th class="p-2 font-semibold">Канал</th>
+              <th class="p-2 font-semibold text-right">Выручка</th>
+              <th class="p-2 font-semibold text-right">Расход</th>
+              <th class="p-2 font-semibold text-right">COGS (доля)</th>
+              <th class="p-2 font-semibold text-right">Налог (доля)</th>
+              <th class="p-2 font-semibold text-right">Чистая на канал</th>
+            </tr></thead>
+            <tbody>${chRows || '<tr><td colspan="6" class="p-3 text-muted text-sm">Нет каналов в этом сегменте.</td></tr>'}</tbody>
+          </table>
+        </div>
+      </div>`;
+    })
+    .join('');
+  host.innerHTML = `
+    <p class="text-xs text-muted">Месяц: ${MONTH_NAMES[m - 1]} ${y}. Налоги и COGS распределены по выручке канала пропорционально общей выручке месяца (${money(monthDim.revenue)}).</p>
+    <div class="mt-4 space-y-8">${blocks || '<p class="text-sm text-muted">Добавьте каналы в разделе «Операции».</p>'}</div>`;
+}
+
 function renderDashboard(state) {
   const { y, m } = getYM();
   const data = computeWithPrev(state, y, m);
   renderPeriodHeader();
   renderDataSourceStrip(state);
+  renderSmartInsights(data);
   renderOverview(data);
   renderKpis(data);
   renderBusinessMetrics(data);
@@ -526,6 +662,12 @@ function renderSalesTableRows(state, key, readOnly) {
     .join('');
 }
 
+function segmentOptionsHtml(selected) {
+  return MARKETING_SEGMENTS.map(
+    (s) => `<option value="${escAttr(s.id)}" ${s.id === selected ? 'selected' : ''}>${escapeHtml(s.label)}</option>`
+  ).join('');
+}
+
 function renderChannelsRows(data, readOnly) {
   return (data.channels || [])
     .map(
@@ -540,12 +682,13 @@ function renderChannelsRows(data, readOnly) {
         <td class="p-2 font-medium ${c.profit >= 0 ? 'text-up' : 'text-down'}">${money(c.profit)}</td>
       </tr>`
           : `<tr class="border-t border-slate-100" data-ch-idx="${idx}">
-        <td class="p-2"><input type="text" class="ch-name w-full rounded-lg border border-slate-200 px-2 py-1 text-sm" value="${escAttr(c.name)}" /></td>
+        <td class="p-2"><input type="text" class="ch-name w-full max-w-[140px] rounded-lg border border-slate-200 px-2 py-1 text-sm" value="${escAttr(c.name)}" /></td>
+        <td class="p-2"><select data-ch-segment="${idx}" class="rounded-lg border border-slate-200 px-1 py-1 text-xs max-w-[140px]">${segmentOptionsHtml(c.segment || 'direct')}</select></td>
         <td class="p-2"><input type="number" class="ch-rev w-28 rounded-lg border border-slate-200 px-2 py-1 text-sm" value="${c.revenue}" /></td>
         <td class="p-2"><input type="number" class="ch-spend w-28 rounded-lg border border-slate-200 px-2 py-1 text-sm" value="${c.spend}" /></td>
         <td class="p-2">${c.romi.toFixed(2)}</td>
         <td class="p-2">${deltaBadge(c.delta)}</td>
-        <td class="p-2 font-medium ${c.profit >= 0 ? 'text-up' : 'text-down'}">${money(c.profit)}</td>
+        <td class="p-2 font-medium ${(c.netProfitChannel ?? c.profit) >= 0 ? 'text-up' : 'text-down'}">${money(c.netProfitChannel ?? c.profit)}</td>
       </tr>`
     )
     .join('');
@@ -576,7 +719,7 @@ function renderSales(state) {
         (p) => `<tr class="border-t border-slate-100">
       <td class="p-3">${escapeHtml(p.sku)} <span class="text-muted text-xs">(${escapeHtml(p.cat)})</span></td>
       <td class="p-3"><span class="inline-flex px-2 py-0.5 rounded-full text-xs font-semibold ${p.abc === 'A' ? 'bg-emerald-100 text-emerald-700' : p.abc === 'B' ? 'bg-amber-100 text-amber-700' : 'bg-slate-100 text-slate-700'}">${p.abc}</span></td>
-      <td class="p-3">${p.soldQty}</td>
+      <td class="p-3"><input type="number" min="0" step="1" data-unit-qty data-catalog-id="${escAttr(p.catalogId)}" value="${p.soldQty}" class="w-16 rounded-lg border border-slate-200 px-2 py-1 text-sm" /></td>
       <td class="p-3 font-medium">${money(p.soldRevenue)}</td>
       <td class="p-3">${p.stockQty}</td>
       <td class="p-3">${money(p.stockValueCost)}</td>
@@ -795,9 +938,11 @@ function refresh() {
       renderSheetsSyncIndicator(state);
       renderSales(state);
       renderExpenses(state);
-    } else if (activeTab === 'catalog') renderCatalog(state);
+    }     else if (activeTab === 'marketing') renderMarketing(state);
+    else if (activeTab === 'catalog') renderCatalog(state);
     else if (activeTab === 'calendar') renderPaymentCalendar(state);
     else if (activeTab === 'settings') renderSettings(state);
+    paintLucideIcons();
   } catch (e) {
     console.error(e);
     showToast(String(e?.message || e), 'error');
@@ -851,7 +996,7 @@ function wireSales() {
     const { y, m } = getYM();
     const key = periodKey(y, m);
 
-    if (t.matches('[data-sale-qty]')) {
+    if (t.matches('[data-sale-qty]') || t.matches('[data-unit-qty]')) {
       const id = t.getAttribute('data-catalog-id');
       const qty = Math.max(0, Math.floor(Number(t.value) || 0));
       patchState((s) => {
@@ -861,6 +1006,20 @@ function wireSales() {
         );
       });
       setDataSourceMeta({ kind: 'manual', format: null, label: 'Ручное изменение продаж' });
+      return;
+    }
+
+    if (t.matches('[data-ch-segment]')) {
+      const idx = +t.getAttribute('data-ch-segment');
+      const seg = String(t.value || 'direct');
+      patchState((s) => {
+        const mo = ensureMonth(s, key);
+        const ch = [...(mo.channels || [])];
+        if (!ch[idx]) return;
+        ch[idx] = { ...ch[idx], segment: seg };
+        mo.channels = ch;
+      });
+      setDataSourceMeta({ kind: 'manual', format: null, label: 'Сегмент канала' });
       return;
     }
 
@@ -910,6 +1069,7 @@ function wireSales() {
   });
 
   panel.addEventListener('change', (e) => {
+    if (e.target.matches('[data-ch-segment]')) return;
     const tr = e.target.closest('tr[data-ch-idx]');
     if (!tr) return;
     const idx = +tr.getAttribute('data-ch-idx');
@@ -923,7 +1083,7 @@ function wireSales() {
       const mo = ensureMonth(s, key);
       const ch = [...(mo.channels || [])];
       if (!ch[idx]) return;
-      ch[idx] = { ...ch[idx], name, revenue, spend };
+      ch[idx] = { ...ch[idx], name, revenue, spend, segment: ch[idx].segment || 'direct' };
       mo.channels = ch;
     });
     setDataSourceMeta({ kind: 'manual', format: null, label: 'Ручное изменение каналов' });
@@ -1094,6 +1254,8 @@ function wireSettings() {
     }
   });
 
+  document.getElementById('btnOpenSheetsFromSettings')?.addEventListener('click', () => openGoogleSheetsModal());
+
   document.getElementById('btnSaveSettings')?.addEventListener('click', () => {
     if (!confirm('Сохранить настройки и ключи в этом браузере (localStorage)?')) return;
     const g = document.getElementById('intGoogleKey')?.value ?? '';
@@ -1105,11 +1267,16 @@ function wireSettings() {
     const currency = document.getElementById('settingCurrency')?.value || 'RUB';
     const sessionPin = String(document.getElementById('settingSessionPin')?.value ?? '0000').trim() || '0000';
     patchState((s) => {
+      const prev = s.integrations || {};
       s.integrations = {
+        ...prev,
         googleSheetsApiKey: String(g),
         moiskladApiKey: String(m),
         crmApiKey: String(c),
         oneCNotes: String(n),
+        googleSheets: prev.googleSheets || defaultGoogleSheets(),
+        googleOAuthClientId: prev.googleOAuthClientId ?? '',
+        googleRedirectUri: prev.googleRedirectUri ?? '',
       };
       s.settings = {
         ...(s.settings || {}),
@@ -1141,14 +1308,200 @@ function wireImportModal() {
     document.getElementById('importCatalogFile')?.click();
   });
   document.getElementById('btnModalSyncSheets')?.addEventListener('click', () => {
-    patchState((s) => {
-      s.settings = s.settings || {};
-      s.settings.lastSheetsSyncAt = new Date().toISOString();
-    });
-    setDataSourceMeta({ kind: 'sheets', format: null, label: 'Синхронизация Google Sheets (демо)' });
     setImportModalOpen(false);
-    showToast('Метка синхронизации Google Sheets обновлена.');
+    openGoogleSheetsModal();
   });
+}
+
+function defaultRedirectUri() {
+  const { origin, pathname } = window.location;
+  const p = pathname.endsWith('/') ? pathname.slice(0, -1) || '/' : pathname;
+  return `${origin}${p}`;
+}
+
+function openGoogleSheetsModal() {
+  const m = document.getElementById('modalGoogleSheets');
+  if (!m) return;
+  const st = getState();
+  const int = st.integrations || {};
+  const gs = int.googleSheets || defaultGoogleSheets();
+  const rid = document.getElementById('gsRedirectUri');
+  if (rid) rid.value = int.googleRedirectUri || defaultRedirectUri();
+  document.getElementById('gsClientId').value = int.googleOAuthClientId || import.meta.env?.VITE_GOOGLE_CLIENT_ID || '';
+  document.getElementById('gsSpreadsheetId').value = gs.spreadsheetId || '';
+  document.getElementById('gsRange').value = gs.sheetRange || 'Лист1!A:C';
+  document.getElementById('gsColDate').value = gs.colDate || 'A';
+  document.getElementById('gsColAmount').value = gs.colAmount || 'B';
+  document.getElementById('gsColCategory').value = gs.colCategory || 'C';
+  m.classList.remove('hidden');
+  paintLucideIcons();
+}
+
+function closeGoogleSheetsModal() {
+  document.getElementById('modalGoogleSheets')?.classList.add('hidden');
+}
+
+function wireGoogleSheetsModal() {
+  document.getElementById('btnGsClose')?.addEventListener('click', closeGoogleSheetsModal);
+  document.getElementById('modalGoogleSheets')?.addEventListener('click', (e) => {
+    if (e.target.id === 'modalGoogleSheets') closeGoogleSheetsModal();
+  });
+  document.getElementById('btnGsSaveLocal')?.addEventListener('click', () => {
+    const clientId = document.getElementById('gsClientId')?.value?.trim() || '';
+    const redirectUri = document.getElementById('gsRedirectUri')?.value?.trim() || defaultRedirectUri();
+    const spreadsheetId = document.getElementById('gsSpreadsheetId')?.value?.trim() || '';
+    const sheetRange = document.getElementById('gsRange')?.value?.trim() || 'Лист1!A:C';
+    const colDate = (document.getElementById('gsColDate')?.value || 'A').toUpperCase();
+    const colAmount = (document.getElementById('gsColAmount')?.value || 'B').toUpperCase();
+    const colCategory = (document.getElementById('gsColCategory')?.value || 'C').toUpperCase();
+    patchState((s) => {
+      s.integrations = s.integrations || {};
+      s.integrations.googleOAuthClientId = clientId;
+      s.integrations.googleRedirectUri = redirectUri;
+      s.integrations.googleSheets = {
+        ...(s.integrations.googleSheets || defaultGoogleSheets()),
+        spreadsheetId,
+        sheetRange,
+        colDate,
+        colAmount,
+        colCategory,
+      };
+    });
+    showToast('Параметры Google Sheets сохранены в данных.');
+  });
+  document.getElementById('btnGsOAuth')?.addEventListener('click', async () => {
+    try {
+      const clientId =
+        document.getElementById('gsClientId')?.value?.trim() ||
+        import.meta.env?.VITE_GOOGLE_CLIENT_ID ||
+        '';
+      const redirectUri = document.getElementById('gsRedirectUri')?.value?.trim() || defaultRedirectUri();
+      if (!clientId) {
+        showToast('Укажите OAuth Client ID.', 'error');
+        return;
+      }
+      await startGoogleOAuthPkce({ clientId, redirectUri });
+    } catch (e) {
+      showToast(String(e?.message || e), 'error');
+    }
+  });
+  document.getElementById('btnGsSync')?.addEventListener('click', async () => {
+    try {
+      const st = getState();
+      const gs = st.integrations?.googleSheets || defaultGoogleSheets();
+      const token = gs.accessToken;
+      if (!token) {
+        showToast('Сначала выполните вход через Google.', 'error');
+        return;
+      }
+      const rows = await fetchSpreadsheetValues(token, gs.spreadsheetId, gs.sheetRange);
+      const drafts = rowsToExpenseDrafts(rows, {
+        colDate: gs.colDate,
+        colAmount: gs.colAmount,
+        colCategory: gs.colCategory,
+      });
+      if (!drafts.length) {
+        showToast('Нет строк для импорта (проверьте диапазон и колонки).', 'error');
+        return;
+      }
+      pushPreImportBackup('Перед импортом Google Sheets');
+      patchState((s) => {
+        s.expenseLines = s.expenseLines || [];
+        for (const d of drafts) {
+          s.expenseLines.push({
+            id: uid('exp'),
+            ...d,
+          });
+        }
+        s.settings = s.settings || {};
+        s.settings.lastSheetsSyncAt = new Date().toISOString();
+      });
+      setDataSourceMeta({ kind: 'sheets', format: 'import', label: `Google Sheets: ${drafts.length} строк` });
+      showToast(`Импортировано строк: ${drafts.length}`);
+      closeGoogleSheetsModal();
+      setTab('operations');
+    } catch (e) {
+      showToast(String(e?.message || e), 'error');
+    }
+  });
+}
+
+function wireCalendarGrid() {
+  const panel = document.getElementById('panel-calendar');
+  if (!panel || panel.dataset.calWired) return;
+  panel.dataset.calWired = '1';
+  panel.addEventListener('change', (e) => {
+    const t = e.target;
+    if (!t.matches('[data-cal-cell]')) return;
+    const iso = t.getAttribute('data-cal-date');
+    const cat = t.getAttribute('data-cal-cat');
+    const amt = Math.max(0, Math.floor(Number(t.value) || 0));
+    const { y, m } = getYM();
+    const pKey = periodKey(y, m);
+    patchState((s) => {
+      s.expenseLines = s.expenseLines || [];
+      s.expenseLines = s.expenseLines.filter(
+        (ex) => !(ex.opDate === iso && ex.category === cat && ex.periodKey === pKey)
+      );
+      if (amt > 0) {
+        s.expenseLines.push({
+          id: uid('exp'),
+          periodKey: pKey,
+          category: cat,
+          amount: amt,
+          note: 'Календарь',
+          status: 'fact',
+          opDate: iso,
+        });
+      }
+    });
+    setDataSourceMeta({ kind: 'manual', format: null, label: 'Правка календаря' });
+  });
+}
+
+function wireFabQuickAdd() {
+  document.getElementById('fabQuickAdd')?.addEventListener('click', () => {
+    setTab('operations');
+    setTimeout(() => {
+      document.getElementById('anchorNewExpense')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      document.getElementById('expenseDate')?.focus();
+    }, 80);
+  });
+}
+
+async function tryCompleteGoogleOAuth() {
+  const params = readOAuthReturnParams();
+  if (!params) return;
+  const st = getState();
+  const clientId =
+    st.integrations?.googleOAuthClientId || import.meta.env?.VITE_GOOGLE_CLIENT_ID || '';
+  const redirectUri = (st.integrations?.googleRedirectUri || defaultRedirectUri()).trim();
+  if (!clientId) {
+    showToast('Сохраните OAuth Client ID в настройках Google Sheets.', 'error');
+    clearOAuthParamsFromUrl();
+    return;
+  }
+  try {
+    const tokens = await exchangeCodeForTokens({
+      code: params.code,
+      clientId,
+      redirectUri,
+    });
+    patchState((s) => {
+      s.integrations = s.integrations || {};
+      s.integrations.googleSheets = {
+        ...(s.integrations.googleSheets || defaultGoogleSheets()),
+        accessToken: tokens.access_token,
+        refreshToken: tokens.refresh_token || s.integrations?.googleSheets?.refreshToken || '',
+        tokenExpiresAt: tokens.tokenExpiresAt,
+      };
+    });
+    clearOAuthParamsFromUrl();
+    showToast('Google: авторизация выполнена.');
+  } catch (e) {
+    showToast(String(e?.message || e), 'error');
+    clearOAuthParamsFromUrl();
+  }
 }
 
 function wireAddOperation() {
@@ -1233,24 +1586,33 @@ function wireImportCatalog() {
 
 subscribe(() => refresh());
 
-initSelects();
-wireTabs();
-wirePeriod();
-wireSales();
-wireExpenses();
-wireCatalog();
-wireSettings();
-wireImportModal();
-wireAddOperation();
-wireWhatIf();
-wireReset();
-wirePersist();
-wireImportCatalog();
+async function boot() {
+  await tryCompleteGoogleOAuth();
+  initSelects();
+  wireTabs();
+  wirePeriod();
+  wireSales();
+  wireExpenses();
+  wireCatalog();
+  wireSettings();
+  wireImportModal();
+  wireGoogleSheetsModal();
+  wireAddOperation();
+  wireFabQuickAdd();
+  wireCalendarGrid();
+  wireWhatIf();
+  wireReset();
+  wirePersist();
+  wireImportCatalog();
 
-const loaded = loadFromStorage();
-if (!loaded && !localStorage.getItem(STORAGE_KEY)) persist();
-else if (loaded) persist();
+  const loaded = loadFromStorage();
+  if (!loaded && !localStorage.getItem(STORAGE_KEY)) persist();
+  else if (loaded) persist();
 
-setTab(activeTab);
+  setTab(activeTab);
+  paintLucideIcons();
+}
+
+boot();
 
 window.__profitAppReady = true;

@@ -11,7 +11,7 @@
         extend: {
           colors: {
             brand: { 50: '#f0f9f7', 100: '#d9f2ec', 500: '#2d9d8c', 600: '#248a7a', 700: '#1d6f63' },
-            surface: '#f1f5f9',
+            surface: '#F8FAFC',
             card: '#ffffff',
             ink: '#0f172a',
             muted: '#64748b',
@@ -19,8 +19,9 @@
             upbg: '#dcfce7',
             down: '#b91c1c',
             downbg: '#fee2e2',
-            accent: '#4f46e5',
+            accent: '#6366F1',
             accentsoft: '#eef2ff',
+            navbg: '#0F172A',
           },
           fontFamily: { sans: ['DM Sans', 'system-ui', 'sans-serif'] },
         },
@@ -36,7 +37,7 @@
     details summary::-webkit-details-marker { display: none; }
     .chev { transition: transform 0.2s ease; }
     details[open] > summary .chev { transform: rotate(180deg); }
-    .tab-active { background: rgba(255,255,255,0.12); color: #fff; }
+    .tab-active { background: rgba(99, 102, 241, 0.22); color: #fff; }
     .tab-inactive { color: rgb(203 213 225); }
     .tab-inactive:hover { background: rgba(255,255,255,0.06); color: #fff; }
     .period-glow {
@@ -60,9 +61,19 @@
     }
     main.app-main { position: relative; z-index: 1; flex: 1 1 0%; min-width: min(100%, 280px); }
     .cal-col-gap { background-color: rgba(254, 202, 202, 0.42); }
+    .app-bg { background-color: #F8FAFC; }
+    .fin-card {
+      border-radius: 16px;
+      background: #fff;
+      border: 1px solid rgb(226 232 240 / 0.95);
+      box-shadow: 0 1px 2px rgb(15 23 42 / 0.04), 0 10px 28px rgb(15 23 42 / 0.06);
+    }
+    .fin-nav { background-color: #0F172A; }
+    .cal-zebra tbody tr:nth-child(even) td:not(.sticky-col) { background-color: rgb(248 250 252 / 0.95); }
+    .cal-zebra tbody tr:nth-child(even) td.sticky-col { background-color: rgb(241 245 249) !important; }
   </style>
 </head>
-<body class="bg-surface text-ink antialiased min-h-screen">
+<body class="app-bg text-ink antialiased min-h-screen">
 
 <div id="toastHost" class="toast-hide fixed top-4 left-1/2 z-[100] max-w-md rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm font-medium text-ink shadow-lg" role="status" aria-live="polite"></div>
 
@@ -81,22 +92,23 @@
 </div>
 
 <div class="flex min-h-screen">
-  <aside class="w-56 lg:w-64 shrink-0 bg-slate-900 text-white flex flex-col shadow-xl">
+  <aside class="fin-nav w-56 lg:w-64 shrink-0 text-white flex flex-col shadow-xl">
     <div class="p-5 border-b border-white/10">
       <div class="flex items-center gap-2">
-        <span class="w-9 h-9 rounded-xl bg-brand-500 flex items-center justify-center text-sm font-bold">У</span>
+        <span class="w-9 h-9 rounded-2xl bg-accent flex items-center justify-center text-sm font-bold text-white shadow-lg shadow-indigo-900/30">У</span>
         <div>
-          <h1 class="text-base font-bold leading-tight">Учёт SMB</h1>
-          <p class="text-[11px] text-slate-400">прибыль · расходы · SKU</p>
+          <h1 class="text-base font-bold leading-tight tracking-tight">Учёт SMB</h1>
+          <p class="text-[11px] text-slate-400">Premium FinTech</p>
         </div>
       </div>
     </div>
     <nav class="p-3 flex flex-col gap-1 text-sm flex-1">
-      <button type="button" data-tab="dashboard" class="tab-btn text-left rounded-xl px-3 py-2.5 font-medium tab-active">Дашборд</button>
-      <button type="button" data-tab="operations" class="tab-btn text-left rounded-xl px-3 py-2.5 font-medium tab-inactive">Операции</button>
-      <button type="button" data-tab="catalog" class="tab-btn text-left rounded-xl px-3 py-2.5 font-medium tab-inactive">Справочник</button>
-      <button type="button" data-tab="calendar" class="tab-btn text-left rounded-xl px-3 py-2.5 font-medium tab-inactive">Платежный календарь</button>
-      <button type="button" data-tab="settings" class="tab-btn text-left rounded-xl px-3 py-2.5 font-medium tab-inactive">Настройки</button>
+      <button type="button" data-tab="dashboard" class="tab-btn flex items-center gap-2.5 text-left rounded-xl px-3 py-2.5 font-medium tab-active"><i data-lucide="layout-dashboard"></i><span>Дашборд</span></button>
+      <button type="button" data-tab="operations" class="tab-btn flex items-center gap-2.5 text-left rounded-xl px-3 py-2.5 font-medium tab-inactive"><i data-lucide="receipt"></i><span>Операции</span></button>
+      <button type="button" data-tab="marketing" class="tab-btn flex items-center gap-2.5 text-left rounded-xl px-3 py-2.5 font-medium tab-inactive"><i data-lucide="megaphone"></i><span>Маркетинг</span></button>
+      <button type="button" data-tab="catalog" class="tab-btn flex items-center gap-2.5 text-left rounded-xl px-3 py-2.5 font-medium tab-inactive"><i data-lucide="package"></i><span>Справочник</span></button>
+      <button type="button" data-tab="calendar" class="tab-btn flex items-center gap-2.5 text-left rounded-xl px-3 py-2.5 font-medium tab-inactive"><i data-lucide="calendar-days"></i><span>Платежный календарь</span></button>
+      <button type="button" data-tab="settings" class="tab-btn flex items-center gap-2.5 text-left rounded-xl px-3 py-2.5 font-medium tab-inactive"><i data-lucide="settings"></i><span>Настройки</span></button>
     </nav>
     <div class="p-4 border-t border-white/10 text-xs text-slate-500 space-y-2">
       <p>Данные в браузере (localStorage). Редактирование — в «Операциях», «Справочнике» и «Настройках».</p>
@@ -104,7 +116,7 @@
   </aside>
 
   <main class="app-main flex flex-col min-h-0">
-    <header class="period-glow border-b border-slate-200/80 px-5 lg:px-8 py-5">
+    <header class="border-b border-slate-200/80 bg-white/90 backdrop-blur-sm px-5 lg:px-8 py-5 shadow-sm">
       <div class="flex flex-col xl:flex-row xl:items-end xl:justify-between gap-4 max-w-6xl mx-auto w-full">
         <div>
           <p class="text-xs font-semibold text-muted uppercase tracking-wider">Отчётный период</p>
@@ -126,13 +138,14 @@
 
     <div class="flex-1 overflow-y-auto px-5 lg:px-8 py-6 max-w-6xl mx-auto w-full">
 
-      <!-- Дашборд (только чтение) -->
+      <!-- Дашборд -->
       <section id="panel-dashboard" class="tab-panel space-y-6">
-        <div id="dashboardSourceStrip" class="rounded-2xl border border-slate-200/80 bg-card px-4 py-3 shadow-sm flex flex-wrap items-center gap-3 text-sm"></div>
+        <div id="dashboardSourceStrip" class="fin-card px-4 py-3 flex flex-wrap items-center gap-3 text-sm"></div>
+        <div id="smartInsightsHost" class="fin-card p-5"></div>
         <div id="overviewBlocks" class="grid sm:grid-cols-2 gap-3"></div>
         <div id="kpiGrid" class="grid grid-cols-2 lg:grid-cols-4 gap-3"></div>
         <div id="businessMetricsGrid" class="grid grid-cols-1 md:grid-cols-3 gap-3"></div>
-        <div class="rounded-2xl border border-slate-200/80 bg-card p-5 shadow-sm">
+        <div class="fin-card p-5">
           <h3 class="font-bold">Что если?</h3>
           <div class="mt-4 grid md:grid-cols-2 gap-4">
             <label class="text-xs font-medium text-muted">Цена продажи, % к базовой
@@ -154,12 +167,12 @@
           <div id="inventoryKpiGrid" class="grid grid-cols-2 lg:grid-cols-5 gap-3"></div>
         </div>
         <div class="grid lg:grid-cols-2 gap-5">
-          <div class="rounded-2xl border border-slate-200/80 bg-card p-5 shadow-sm">
+          <div class="fin-card p-5">
             <h3 class="font-bold text-ink">Выручка и чистая прибыль по месяцам</h3>
             <p class="text-xs text-muted mt-1">Линейный график (Chart.js)</p>
             <div class="h-72 mt-4"><canvas id="chartProfit"></canvas></div>
           </div>
-          <div class="rounded-2xl border border-slate-200/80 bg-card p-5 shadow-sm">
+          <div class="fin-card p-5">
             <h3 class="font-bold text-ink">Структура расходов за период</h3>
             <p class="text-xs text-muted mt-1">Круговая диаграмма (Chart.js)</p>
             <div class="h-72 mt-4 flex items-center justify-center"><canvas id="chartExpenses"></canvas></div>
@@ -186,7 +199,7 @@
           <p id="sheetsSyncIndicator" class="text-xs text-muted lg:text-right max-w-md"></p>
         </div>
 
-        <div class="rounded-2xl border border-slate-200/80 bg-card p-5 shadow-sm">
+        <div class="fin-card p-5">
           <h3 class="font-bold">Продажи по справочнику (кол-во за месяц)</h3>
           <p class="text-xs text-muted mt-1">Цены и закуп берутся из справочника товаров. Меняйте количества прямо в таблице.</p>
           <div class="overflow-x-auto mt-4 rounded-xl border border-slate-100">
@@ -211,25 +224,26 @@
             <input type="number" id="opsInputOrders" min="0" class="mt-1 block w-32 rounded-xl border border-slate-200 px-3 py-2 text-sm font-medium" />
           </label>
         </div>
-        <div class="rounded-2xl border border-slate-200/80 bg-card p-5 shadow-sm">
+        <div class="fin-card p-5">
           <h3 class="font-bold">Каналы (выручка и расход на рекламу)</h3>
           <div class="overflow-x-auto mt-3 rounded-xl border border-slate-100">
-            <table class="w-full text-sm min-w-[640px]">
+            <table class="w-full text-sm min-w-[760px]">
               <thead>
                 <tr class="text-left text-muted bg-slate-50/90">
                   <th class="p-3 font-semibold">Канал</th>
+                  <th class="p-3 font-semibold">Источник</th>
                   <th class="p-3 font-semibold">Выручка</th>
                   <th class="p-3 font-semibold">Расход</th>
                   <th class="p-3 font-semibold">ROMI</th>
                   <th class="p-3 font-semibold">Δ %</th>
-                  <th class="p-3 font-semibold">Вклад</th>
+                  <th class="p-3 font-semibold">Чистая на канал</th>
                 </tr>
               </thead>
               <tbody id="opsChannelsBody"></tbody>
             </table>
           </div>
         </div>
-        <div class="rounded-2xl border border-slate-200/80 bg-card p-5 shadow-sm">
+        <div class="fin-card p-5">
           <h3 class="font-bold">Юнит-экономика по SKU</h3>
           <p class="text-xs text-muted mt-1">Маркетинг распределяется по выручке строки.</p>
           <div class="overflow-x-auto mt-3 rounded-xl border border-slate-100">
@@ -256,7 +270,7 @@
         </div>
 
         <div class="grid lg:grid-cols-2 gap-5">
-          <div class="rounded-2xl border border-slate-200/80 bg-card p-5 shadow-sm">
+          <div class="fin-card p-5">
             <h3 class="font-bold">Зарплаты (ФОТ)</h3>
             <p class="text-xs text-muted mt-1">Ежемесячные суммы — учитываются в каждом месяце.</p>
             <div class="overflow-x-auto mt-3 rounded-xl border border-slate-100 max-h-56 overflow-y-auto">
@@ -272,7 +286,7 @@
               <button type="submit" class="sm:col-span-4 rounded-xl bg-brand-600 hover:bg-brand-700 text-white text-sm font-semibold py-2.5">Добавить строку ФОТ</button>
             </form>
           </div>
-          <div class="rounded-2xl border border-slate-200/80 bg-card p-5 shadow-sm">
+          <div class="fin-card p-5">
             <h3 class="font-bold">Аренда</h3>
             <p class="text-xs text-muted mt-1">Постоянные платежи за помещения.</p>
             <div class="overflow-x-auto mt-3 rounded-xl border border-slate-100 max-h-56 overflow-y-auto">
@@ -289,7 +303,7 @@
           </div>
         </div>
 
-        <div id="anchorNewExpense" class="rounded-2xl border border-slate-200/80 bg-card p-5 shadow-sm space-y-4 scroll-mt-24">
+        <div id="anchorNewExpense" class="fin-card p-5 space-y-4 scroll-mt-24">
           <h3 class="font-bold">Новая операция — расход (за выбранный в шапке месяц)</h3>
           <form id="formExpense" class="grid sm:grid-cols-2 lg:grid-cols-4 gap-3 items-end">
             <label class="text-xs font-medium text-muted">Статус
@@ -319,7 +333,7 @@
 
       <!-- Справочник -->
       <section id="panel-catalog" class="tab-panel hidden space-y-6">
-        <div class="rounded-2xl border border-slate-200/80 bg-card p-5 shadow-sm">
+        <div class="fin-card p-5">
           <div class="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
             <div>
               <h3 class="font-bold">Товары и услуги</h3>
@@ -358,9 +372,18 @@
         </div>
       </section>
 
+      <!-- Маркетинг -->
+      <section id="panel-marketing" class="tab-panel hidden space-y-6">
+        <div class="fin-card p-5">
+          <h2 class="font-bold text-lg flex items-center gap-2"><i data-lucide="megaphone" class="w-5 h-5 text-accent"></i> Маркетинг по источникам</h2>
+          <p class="text-xs text-muted mt-1">Соцсети (Instagram, Telegram, VK), контекстная реклама и прямые продажи. Чистая прибыль на канал = выручка − расход на канал − доля COGS − доля налога (пропорционально выручке).</p>
+          <div id="marketingRollupHost" class="mt-5 space-y-6"></div>
+        </div>
+      </section>
+
       <!-- Платежный календарь -->
       <section id="panel-calendar" class="tab-panel hidden space-y-4">
-        <div class="rounded-2xl border border-slate-200/80 bg-card p-5 shadow-sm">
+        <div class="fin-card p-5">
           <h2 class="font-bold text-lg">Платежный календарь</h2>
           <p class="text-xs text-muted mt-1">30 дней от 1-го числа выбранного месяца: по строкам — категории и ключевые статьи, по столбцам — суммы списаний за день. Красная колонка — остаток кассы после дня ушёл в минус.</p>
           <div id="paymentCalendarWrap" class="mt-4 overflow-x-auto rounded-xl border border-slate-100"></div>
@@ -369,7 +392,7 @@
 
       <!-- Настройки -->
       <section id="panel-settings" class="tab-panel hidden space-y-6">
-        <div class="rounded-2xl border border-slate-200/80 bg-card p-5 shadow-sm space-y-4">
+        <div class="fin-card p-5 space-y-4">
           <h2 class="font-bold text-lg">Настройки</h2>
           <p class="text-xs text-muted">Ключи и параметры хранятся в localStorage этого браузера.</p>
           <div class="grid sm:grid-cols-2 gap-3">
@@ -403,15 +426,16 @@
             </label>
           </div>
           <button type="button" id="btnSaveSettings" class="rounded-xl bg-brand-600 hover:bg-brand-700 text-white text-sm font-semibold py-2.5 px-5">Сохранить настройки</button>
+          <button type="button" id="btnOpenSheetsFromSettings" class="mt-3 rounded-xl border border-indigo-200 bg-accentsoft px-4 py-2.5 text-sm font-semibold text-accent hover:bg-indigo-100">Google Sheets: OAuth и импорт</button>
         </div>
 
-        <div class="rounded-2xl border border-slate-200/80 bg-card p-5 shadow-sm space-y-4">
+        <div class="fin-card p-5 space-y-4">
           <h3 class="font-bold flex items-center gap-2"><span class="w-1 h-4 rounded-full bg-brand-500"></span> Единый источник данных</h3>
           <p class="text-xs text-muted">Перед обновлением с диска временные несохранённые правки в памяти не используются — подставляется последнее сохранённое состояние из этого браузера.</p>
           <button type="button" id="btnReloadSource" class="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold shadow-sm hover:bg-slate-50">Обновить из источника (localStorage)</button>
         </div>
 
-        <div class="rounded-2xl border border-slate-200/80 bg-card p-5 shadow-sm space-y-3">
+        <div class="fin-card p-5 space-y-3">
           <h3 class="font-bold">Резервные копии перед импортом</h3>
           <p class="text-xs text-muted">Перед каждым новым импортом файла автоматически создаётся снимок; здесь можно откатиться.</p>
           <ul id="backupList" class="text-sm space-y-2 divide-y divide-slate-100"></ul>
@@ -426,6 +450,48 @@
 
     </div>
   </main>
+</div>
+
+<button type="button" id="fabQuickAdd" class="fixed bottom-6 right-6 z-[90] h-14 w-14 rounded-2xl bg-accent text-white shadow-xl shadow-indigo-400/35 flex items-center justify-center hover:bg-indigo-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-accent" title="Быстрая транзакция" aria-label="Добавить операцию">
+  <i data-lucide="plus" class="w-7 h-7"></i>
+</button>
+
+<div id="modalGoogleSheets" class="hidden fixed inset-0 z-[170] flex items-center justify-center bg-slate-900/50 p-4" role="dialog" aria-modal="true" aria-labelledby="modalSheetsTitle">
+  <div class="bg-white rounded-2xl max-w-lg w-full p-6 shadow-2xl border border-slate-200 max-h-[90vh] overflow-y-auto">
+    <h3 id="modalSheetsTitle" class="font-bold text-lg text-ink">Google Sheets</h3>
+    <p class="text-sm text-muted mt-2">OAuth 2.0 (PKCE). В Google Cloud Console создайте OAuth client (Web), укажите Redirect URI точно как ниже.</p>
+    <div class="mt-4 space-y-3">
+      <label class="text-xs font-medium text-muted block">OAuth Client ID
+        <input type="text" id="gsClientId" autocomplete="off" class="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm font-mono" placeholder="xxxxx.apps.googleusercontent.com" />
+      </label>
+      <label class="text-xs font-medium text-muted block">Redirect URI (скопируйте в консоль Google)
+        <input type="text" id="gsRedirectUri" readonly class="mt-1 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-mono" />
+      </label>
+      <label class="text-xs font-medium text-muted block">Spreadsheet ID
+        <input type="text" id="gsSpreadsheetId" autocomplete="off" class="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm font-mono" placeholder="из URL таблицы" />
+      </label>
+      <label class="text-xs font-medium text-muted block">Диапазон (A1)
+        <input type="text" id="gsRange" class="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm" placeholder="Лист1!A:C" />
+      </label>
+      <div class="grid grid-cols-3 gap-2">
+        <label class="text-xs font-medium text-muted">Колонка «Дата» (буква)
+          <input type="text" id="gsColDate" maxlength="3" class="mt-1 w-full rounded-xl border border-slate-200 px-2 py-2 text-sm uppercase" value="A" />
+        </label>
+        <label class="text-xs font-medium text-muted">«Сумма»
+          <input type="text" id="gsColAmount" maxlength="3" class="mt-1 w-full rounded-xl border border-slate-200 px-2 py-2 text-sm uppercase" value="B" />
+        </label>
+        <label class="text-xs font-medium text-muted">«Категория»
+          <input type="text" id="gsColCategory" maxlength="3" class="mt-1 w-full rounded-xl border border-slate-200 px-2 py-2 text-sm uppercase" value="C" />
+        </label>
+      </div>
+    </div>
+    <div class="mt-5 flex flex-col sm:flex-row gap-2">
+      <button type="button" id="btnGsSaveLocal" class="flex-1 rounded-xl border border-slate-200 py-2.5 text-sm font-semibold hover:bg-slate-50">Сохранить в данные</button>
+      <button type="button" id="btnGsOAuth" class="flex-1 rounded-xl bg-accent text-white py-2.5 text-sm font-semibold hover:bg-indigo-600">Войти через Google</button>
+    </div>
+    <button type="button" id="btnGsSync" class="mt-3 w-full rounded-xl bg-slate-900 text-white py-2.5 text-sm font-semibold hover:bg-slate-800">Импортировать строки в журнал</button>
+    <button type="button" id="btnGsClose" class="mt-3 w-full rounded-xl border border-slate-200 py-2.5 text-sm font-semibold text-muted hover:bg-slate-50">Закрыть</button>
+  </div>
 </div>
 
 <div id="modalImport" class="hidden fixed inset-0 z-[160] flex items-center justify-center bg-slate-900/50 p-4" role="dialog" aria-modal="true" aria-labelledby="modalImportTitle">
@@ -443,7 +509,7 @@
     <input type="file" id="importCatalogFile" accept=".csv,.txt,.xlsx,.xls" class="hidden" />
     <div class="mt-6 flex flex-col gap-3">
       <button type="button" id="btnModalImportExcel" class="w-full rounded-xl bg-accentsoft text-accent border border-indigo-200 px-4 py-3 text-sm font-semibold hover:bg-indigo-100 text-left">Загрузить Excel / CSV</button>
-      <button type="button" id="btnModalSyncSheets" class="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-left hover:bg-slate-50">Синхронизировать с Google Sheets</button>
+      <button type="button" id="btnModalSyncSheets" class="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-left hover:bg-slate-50 flex items-center gap-2"><i data-lucide="cloud"></i><span>Google Sheets (OAuth)…</span></button>
     </div>
     <button type="button" id="btnModalImportClose" class="mt-5 w-full rounded-xl border border-slate-200 py-2.5 text-sm font-semibold text-muted hover:bg-slate-50">Закрыть</button>
   </div>

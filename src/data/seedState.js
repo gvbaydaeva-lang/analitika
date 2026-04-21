@@ -1,4 +1,5 @@
 import { PERIODS } from './periods.js';
+import { inferChannelSegment } from '../domain/channelSegment.js';
 
 function uid(prefix) {
   return `${prefix}-${Math.random().toString(36).slice(2, 10)}`;
@@ -29,12 +30,28 @@ export function defaultDataSource() {
   };
 }
 
+export function defaultGoogleSheets() {
+  return {
+    spreadsheetId: '',
+    sheetRange: 'Лист1!A:C',
+    colDate: 'A',
+    colAmount: 'B',
+    colCategory: 'C',
+    accessToken: '',
+    refreshToken: '',
+    tokenExpiresAt: null,
+  };
+}
+
 export function defaultIntegrations() {
   return {
     googleSheetsApiKey: '',
     moiskladApiKey: '',
     crmApiKey: '',
     oneCNotes: '',
+    googleOAuthClientId: '',
+    googleRedirectUri: '',
+    googleSheets: defaultGoogleSheets(),
   };
 }
 
@@ -72,6 +89,7 @@ export function createSeedState() {
         revenue: c.revenue,
         spend: c.spend,
         delta: c.delta,
+        segment: inferChannelSegment(c.name),
       })),
       sales: d.products.map((p, i) => ({
         catalogId: ids[i],
@@ -119,7 +137,7 @@ export function createSeedState() {
   }
 
   return {
-    version: 6,
+    version: 7,
     catalog,
     months,
     payroll,

@@ -1,9 +1,20 @@
 /** @typedef {import('./state.js').AppState} AppState */
 
+import { inferChannelSegment, CHANNEL_SEGMENT_IDS } from './domain/channelSegment.js';
+
 export const EXPENSE_CATEGORIES = [
   { id: 'marketing', label: 'Маркетинг (доп.)' },
   { id: 'utilities', label: 'Коммуналка' },
   { id: 'other', label: 'Прочее' },
+];
+
+/** Сегмент маркетингового канала для вкладки «Маркетинг». */
+export const MARKETING_SEGMENTS = [
+  { id: 'social_instagram', label: 'Instagram', group: 'Соцсети' },
+  { id: 'social_telegram', label: 'Telegram', group: 'Соцсети' },
+  { id: 'social_vk', label: 'VK', group: 'Соцсети' },
+  { id: 'context', label: 'Контекстная реклама', group: 'Контекст' },
+  { id: 'direct', label: 'Прямые продажи', group: 'Прямые' },
 ];
 
 export const MONTH_NAMES = [
@@ -88,6 +99,7 @@ export function computeMonth(state, y, m) {
     const stockValueCost = stockQty * (Number(p.purchase) || 0);
     const stockValueRetail = stockQty * (Number(p.retail) || 0);
     return {
+      catalogId: line.catalogId,
       sku: p.name,
       cat: p.category,
       qty,
@@ -146,7 +158,22 @@ export function computeMonth(state, y, m) {
     const romi = spend > 0 ? rev / spend : 0;
     const cogsAlloc = revenue > 0 ? (rev / revenue) * cogs : 0;
     const profit = rev - cogsAlloc - spend;
-    return { ...c, spend, revenue: rev, romi, profit, delta: Number(c.delta) || 0 };
+    const segment =
+      c.segment && CHANNEL_SEGMENT_IDS.includes(c.segment) ? c.segment : inferChannelSegment(c.name);
+    const taxAlloc = revenue > 0 && taxes > 0 ? (rev / revenue) * taxes : 0;
+    const netProfitChannel = rev - spend - cogsAlloc - taxAlloc;
+    return {
+      ...c,
+      segment,
+      spend,
+      revenue: rev,
+      romi,
+      profit,
+      cogsAlloc,
+      taxAlloc,
+      netProfitChannel,
+      delta: Number(c.delta) || 0,
+    };
   });
 
   const totalOpex = marketingTotal + payrollTotal + rentTotal + utilitiesExtra + otherExtra;
@@ -225,6 +252,9 @@ export function computeWithPrev(state, y, m) {
   const whatIfNetBeforeTax = whatIfRevenue - cur.cogs - (cur.totalOpex - cur.marketingTotal + whatIfMarketing);
   const whatIfTaxes = whatIfNetBeforeTax > 0 ? (whatIfNetBeforeTax * cur.taxRatePct) / 100 : 0;
   const whatIfNet = whatIfNetBeforeTax - whatIfTaxes;
+  const burnDeltaPct =
+    prev.burnRate > 0.01 ? ((cur.burnRate - prev.burnRate) / prev.burnRate) * 100 : 0;
+
   return {
     ...cur,
     prev,
@@ -232,6 +262,7 @@ export function computeWithPrev(state, y, m) {
     revDeltaPct,
     mktDeltaPct,
     cogsDeltaPct,
+    burnDeltaPct,
     whatIf: {
       pricePct: whatIfPricePct,
       marketingPct: whatIfMarketingPct,
@@ -294,7 +325,7 @@ export function buildPaymentCalendarMatrix(state, y, m) {
         .filter((e) => e.opDate === iso && e.category === def.id)
         .reduce((s, e) => s + (Number(e.amount) || 0), 0);
     });
-    return { id: def.id, label: def.label, cells };
+    return { id: def.id, label: def.label, cells, editable: def.type === 'lines' };
   });
 
   const dailyTotal = dates.map((_, col) => rows.reduce((s, r) => s + (Number(r.cells[col]) || 0), 0));
@@ -309,6 +340,34 @@ export function buildPaymentCalendarMatrix(state, y, m) {
   }
 
   return { dates, dayLabels: dates.map((d) => d.slice(8)), rows, dailyTotal, balances, gapCols };
+}
+
+/** Сводка по сегментам маркетинга и детализация по каналам. */
+export function computeMarketingRollup(state, y, m) {
+  const dim = computeMonth(state, y, m);
+  const bySeg = new Map();
+  for (const def of MARKETING_SEGMENTS) {
+    bySeg.set(def.id, {
+      def,
+      channels: [],
+      revenue: 0,
+      spend: 0,
+      cogsAlloc: 0,
+      taxAlloc: 0,
+      netProfitChannel: 0,
+    });
+  }
+  for (const ch of dim.channels) {
+    const sid = ch.segment && bySeg.has(ch.segment) ? ch.segment : 'direct';
+    const bucket = bySeg.get(sid) || bySeg.get('direct');
+    bucket.channels.push(ch);
+    bucket.revenue += ch.revenue;
+    bucket.spend += ch.spend;
+    bucket.cogsAlloc += ch.cogsAlloc || 0;
+    bucket.taxAlloc += ch.taxAlloc || 0;
+    bucket.netProfitChannel += ch.netProfitChannel || 0;
+  }
+  return { segments: [...bySeg.values()], monthDim: dim };
 }
 
 export function cashProjection30d(state, fromDate = new Date()) {
@@ -360,3 +419,5 @@ export function profitSeries(state, lastN = 12) {
   }
   return { labels, profits, revenues, keys: slice };
 }
+
+export { inferChannelSegment, CHANNEL_SEGMENT_IDS } from './domain/channelSegment.js';

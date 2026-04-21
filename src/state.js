@@ -4,7 +4,9 @@ import {
   defaultDataSource,
   defaultIntegrations,
   defaultBusinessSettings,
+  defaultGoogleSheets,
 } from './data/seedState.js';
+import { inferChannelSegment } from './domain/channelSegment.js';
 
 export const STORAGE_KEY = 'profitPlatformAccount:v2';
 
@@ -73,9 +75,24 @@ function migrateParsed(parsed) {
     parsed.settings.sessionPin = parsed.settings.sessionPin || '0000';
     parsed.version = 6;
   }
-  if (parsed.version !== 6) return null;
+  if (parsed.version === 6) {
+    parsed.integrations = parsed.integrations || defaultIntegrations();
+    parsed.integrations.googleSheets = parsed.integrations.googleSheets || defaultGoogleSheets();
+    if (parsed.integrations.googleOAuthClientId === undefined) parsed.integrations.googleOAuthClientId = '';
+    if (parsed.integrations.googleRedirectUri === undefined) parsed.integrations.googleRedirectUri = '';
+    for (const mo of Object.values(parsed.months || {})) {
+      for (const ch of mo.channels || []) {
+        if (!ch.segment) ch.segment = inferChannelSegment(ch.name);
+      }
+    }
+    parsed.version = 7;
+  }
+  if (parsed.version !== 7) return null;
   if (!parsed.dataSource) parsed.dataSource = defaultDataSource();
   if (!parsed.integrations) parsed.integrations = defaultIntegrations();
+  if (!parsed.integrations.googleSheets) parsed.integrations.googleSheets = defaultGoogleSheets();
+  if (parsed.integrations.googleOAuthClientId === undefined) parsed.integrations.googleOAuthClientId = '';
+  if (parsed.integrations.googleRedirectUri === undefined) parsed.integrations.googleRedirectUri = '';
   if (!parsed.settings) parsed.settings = defaultBusinessSettings();
   for (const e of parsed.expenseLines || []) {
     if (!e.status) e.status = 'fact';
