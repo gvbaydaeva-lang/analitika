@@ -73,9 +73,11 @@ export function computeMonth(state, y, m) {
 
   const marketingChannels = channelSpendTotal(month);
   const linesForMonth = (state.expenseLines || []).filter((e) => e.periodKey === key);
-  const marketingExtra = linesForMonth.filter((e) => e.category === 'marketing').reduce((s, e) => s + (Number(e.amount) || 0), 0);
-  const utilitiesExtra = linesForMonth.filter((e) => e.category === 'utilities').reduce((s, e) => s + (Number(e.amount) || 0), 0);
-  const otherExtra = linesForMonth.filter((e) => e.category === 'other').reduce((s, e) => s + (Number(e.amount) || 0), 0);
+  /** В P&L месяца только факт; «план» учитывается в прогнозе кассы (cashProjection30d), не в burn за месяц. */
+  const linesPnl = linesForMonth.filter((e) => e.status !== 'plan');
+  const marketingExtra = linesPnl.filter((e) => e.category === 'marketing').reduce((s, e) => s + (Number(e.amount) || 0), 0);
+  const utilitiesExtra = linesPnl.filter((e) => e.category === 'utilities').reduce((s, e) => s + (Number(e.amount) || 0), 0);
+  const otherExtra = linesPnl.filter((e) => e.category === 'other').reduce((s, e) => s + (Number(e.amount) || 0), 0);
 
   const payrollTotal = (state.payroll || []).reduce((s, r) => s + (Number(r.amount) || 0), 0);
   const rentTotal = (state.rent || []).reduce((s, r) => s + (Number(r.amount) || 0), 0);

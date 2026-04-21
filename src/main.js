@@ -118,6 +118,14 @@ function escapeHtml(s) {
     .replace(/>/g, '&gt;');
 }
 
+/** Подпись процента для слайдеров «Что если?» (+5%, −3%, 0%). */
+function formatScenarioPct(raw) {
+  const v = Math.round(Number(raw) || 0);
+  if (v > 0) return `+${v}%`;
+  if (v < 0) return `−${Math.abs(v)}%`;
+  return '0%';
+}
+
 function getYM() {
   const yRaw = Number(document.getElementById('selectYear')?.value);
   const mRaw = Number(document.getElementById('selectMonth')?.value);
@@ -493,8 +501,8 @@ function renderWhatIf(data) {
   if (!price || !mkt) return;
   price.value = String(data.whatIf?.pricePct || 0);
   mkt.value = String(data.whatIf?.marketingPct || 0);
-  document.getElementById('whatIfPriceLabel').textContent = `${Number(price.value)}%`;
-  document.getElementById('whatIfMarketingLabel').textContent = `${Number(mkt.value)}%`;
+  document.getElementById('whatIfPriceLabel').textContent = formatScenarioPct(price.value);
+  document.getElementById('whatIfMarketingLabel').textContent = formatScenarioPct(mkt.value);
   const w = data.whatIf || { net: data.net };
   const netVal = Number(w.net);
   document.getElementById('whatIfNet').textContent = money(Number.isFinite(netVal) ? netVal : 0);
@@ -1540,8 +1548,15 @@ function wireAddOperation() {
 function wireWhatIf() {
   const price = document.getElementById('whatIfPrice');
   const mkt = document.getElementById('whatIfMarketing');
-  if (!price || !mkt) return;
+  const priceLbl = document.getElementById('whatIfPriceLabel');
+  const mktLbl = document.getElementById('whatIfMarketingLabel');
+  if (!price || !mkt || !priceLbl || !mktLbl) return;
+  const syncLabels = () => {
+    priceLbl.textContent = formatScenarioPct(price.value);
+    mktLbl.textContent = formatScenarioPct(mkt.value);
+  };
   const apply = () => {
+    syncLabels();
     patchState((s) => {
       s.settings = s.settings || {};
       s.settings.whatIfPricePct = Number(price.value) || 0;

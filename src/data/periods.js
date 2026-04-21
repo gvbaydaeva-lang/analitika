@@ -8,7 +8,7 @@ export const PERIODS = {
     marketing: 28000,
     fixed: 19500,
     cogs: 32000,
-    orders: 540,
+    orders: 86,
     units: 1200,
     channels: [
       { name: 'Google Ads', revenue: 45000, spend: 14000, romi: 2.1, profit: 16000, delta: -4 },
@@ -16,9 +16,9 @@ export const PERIODS = {
       { name: 'Директ', revenue: 20000, spend: 4500, romi: 2.4, profit: 6200, delta: 0 },
     ],
     products: [
-      { sku: 'Товар A', qty: 220, retail: 2200, purchase: 880, mktPerUnit: 180, cat: 'A' },
-      { sku: 'Товар B', qty: 95, retail: 890, purchase: 620, mktPerUnit: 260, cat: 'C' },
-      { sku: 'Услуга «Старт»', qty: 40, retail: 4500, purchase: 900, mktPerUnit: 400, cat: 'B' },
+      { sku: 'Товар A', qty: 14, retail: 2200, purchase: 880, mktPerUnit: 180, cat: 'A' },
+      { sku: 'Товар B', qty: 35, retail: 890, purchase: 620, mktPerUnit: 260, cat: 'C' },
+      { sku: 'Услуга «Старт»', qty: 10, retail: 4500, purchase: 900, mktPerUnit: 400, cat: 'B' },
     ],
     fixedLines: [
       { label: 'Аренда', amount: 7500 },
@@ -35,7 +35,7 @@ export const PERIODS = {
     marketing: 30000,
     fixed: 20000,
     cogs: 35000,
-    orders: 600,
+    orders: 92,
     units: 1350,
     channels: [
       { name: 'Google Ads', revenue: 50000, spend: 15000, romi: 2.3, profit: 20000, delta: 5 },
@@ -43,9 +43,9 @@ export const PERIODS = {
       { name: 'Директ', revenue: 22000, spend: 5000, romi: 2.35, profit: 7000, delta: -2 },
     ],
     products: [
-      { sku: 'Товар A', qty: 240, retail: 2200, purchase: 880, mktPerUnit: 200, cat: 'A' },
-      { sku: 'Товар B', qty: 100, retail: 900, purchase: 650, mktPerUnit: 280, cat: 'C' },
-      { sku: 'Услуга «Старт»', qty: 45, retail: 4500, purchase: 900, mktPerUnit: 420, cat: 'B' },
+      { sku: 'Товар A', qty: 16, retail: 2200, purchase: 880, mktPerUnit: 200, cat: 'A' },
+      { sku: 'Товар B', qty: 38, retail: 900, purchase: 650, mktPerUnit: 280, cat: 'C' },
+      { sku: 'Услуга «Старт»', qty: 11, retail: 4500, purchase: 900, mktPerUnit: 420, cat: 'B' },
     ],
     fixedLines: [
       { label: 'Аренда', amount: 8000 },
@@ -63,7 +63,7 @@ export const PERIODS = {
     marketing: 33500,
     fixed: 20500,
     cogs: 38000,
-    orders: 655,
+    orders: 96,
     units: 1420,
     channels: [
       { name: 'Google Ads', revenue: 55000, spend: 16500, romi: 2.33, profit: 22800, delta: 3 },
@@ -71,9 +71,9 @@ export const PERIODS = {
       { name: 'Директ', revenue: 25000, spend: 5500, romi: 2.45, profit: 8200, delta: 6 },
     ],
     products: [
-      { sku: 'Товар A', qty: 255, retail: 2250, purchase: 900, mktPerUnit: 210, cat: 'A' },
-      { sku: 'Товар B', qty: 105, retail: 920, purchase: 640, mktPerUnit: 270, cat: 'C' },
-      { sku: 'Услуга «Старт»', qty: 52, retail: 4600, purchase: 920, mktPerUnit: 430, cat: 'B' },
+      { sku: 'Товар A', qty: 18, retail: 2250, purchase: 900, mktPerUnit: 210, cat: 'A' },
+      { sku: 'Товар B', qty: 42, retail: 920, purchase: 640, mktPerUnit: 270, cat: 'C' },
+      { sku: 'Услуга «Старт»', qty: 13, retail: 4600, purchase: 920, mktPerUnit: 430, cat: 'B' },
     ],
     fixedLines: [
       { label: 'Аренда', amount: 8000 },

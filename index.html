@@ -43,6 +43,13 @@
     .period-glow {
       background: linear-gradient(135deg, rgba(45,157,140,0.1) 0%, rgba(79,70,229,0.08) 100%);
     }
+    /* Слайдеры «Что если?» — компактная ширина, без растягивания на весь экран */
+    .what-if-range {
+      width: 100%;
+      max-width: 100%;
+      height: 0.5rem;
+      accent-color: #6366f1;
+    }
     /* Тост не должен перехватывать клики по странице, когда скрыт */
     #toastHost {
       transition: opacity .25s ease, transform .25s ease;
@@ -145,19 +152,32 @@
         <div id="overviewBlocks" class="grid sm:grid-cols-2 gap-3"></div>
         <div id="kpiGrid" class="grid grid-cols-2 lg:grid-cols-4 gap-3"></div>
         <div id="businessMetricsGrid" class="grid grid-cols-1 md:grid-cols-3 gap-3"></div>
-        <div class="fin-card p-4">
-          <h3 class="font-bold text-sm">Что если?</h3>
-          <div class="mt-3 space-y-3 max-w-md">
-            <label class="block text-xs font-medium text-muted">Цена продажи, % к базовой
-              <input id="whatIfPrice" type="range" min="-30" max="30" step="1" class="mt-1.5 block w-full max-w-xs" />
-              <div class="mt-1 text-sm">Сценарий: <span id="whatIfPriceLabel" class="font-semibold">0%</span></div>
-            </label>
-            <label class="block text-xs font-medium text-muted">Маркетинг, % к базовому
-              <input id="whatIfMarketing" type="range" min="-50" max="80" step="1" class="mt-1.5 block w-full max-w-xs" />
-              <div class="mt-1 text-sm">Сценарий: <span id="whatIfMarketingLabel" class="font-semibold">0%</span></div>
-            </label>
+        <div class="fin-card p-4 w-full max-w-[500px]">
+          <h3 class="font-bold text-sm text-ink">Что если?</h3>
+          <p class="text-xs text-muted mt-1">Сценарии относительно выбранного месяца</p>
+          <div class="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-5">
+            <div class="min-w-0">
+              <p class="text-xs font-semibold text-ink">Цена продажи</p>
+              <p class="text-[11px] text-muted mt-0.5">% к базовой выручке</p>
+              <div class="mt-2 flex items-center gap-2 text-[10px] text-muted tabular-nums shrink-0">
+                <span class="w-8 text-right">−30%</span>
+                <input id="whatIfPrice" type="range" min="-30" max="30" step="1" class="what-if-range flex-1 min-w-0" />
+                <span class="w-8">+30%</span>
+              </div>
+              <p class="mt-2 text-xs"><span class="text-muted">Текущее значение:</span> <span id="whatIfPriceLabel" class="font-semibold text-ink tabular-nums">0%</span></p>
+            </div>
+            <div class="min-w-0">
+              <p class="text-xs font-semibold text-ink">Маркетинг</p>
+              <p class="text-[11px] text-muted mt-0.5">% к базовому бюджету</p>
+              <div class="mt-2 flex items-center gap-2 text-[10px] text-muted tabular-nums shrink-0">
+                <span class="w-8 text-right">−50%</span>
+                <input id="whatIfMarketing" type="range" min="-50" max="80" step="1" class="what-if-range flex-1 min-w-0" />
+                <span class="w-8">+80%</span>
+              </div>
+              <p class="mt-2 text-xs"><span class="text-muted">Текущее значение:</span> <span id="whatIfMarketingLabel" class="font-semibold text-ink tabular-nums">0%</span></p>
+            </div>
           </div>
-          <div class="mt-3 text-sm">Прогноз чистой прибыли: <span id="whatIfNet" class="font-bold">—</span></div>
+          <div class="mt-4 pt-3 border-t border-slate-100 text-sm"><span class="text-muted">Прогноз чистой прибыли:</span> <span id="whatIfNet" class="font-bold text-ink">—</span></div>
         </div>
         <div>
           <h3 class="text-sm font-bold text-ink mb-2 flex items-center gap-2">
