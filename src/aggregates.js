@@ -99,7 +99,7 @@ export function computeMonth(state, y, m) {
     const stockValueCost = stockQty * (Number(p.purchase) || 0);
     const stockValueRetail = stockQty * (Number(p.retail) || 0);
     return {
-      catalogId: line.catalogId,
+      catalogId: row.catalogId,
       sku: p.name,
       cat: p.category,
       qty,
