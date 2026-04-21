@@ -152,6 +152,11 @@ export function computeMonth(state, y, m) {
     stockRubRetail,
   };
 
+  const totalOpex = marketingTotal + payrollTotal + rentTotal + utilitiesExtra + otherExtra;
+  const netBeforeTax = revenue - cogs - totalOpex;
+  const taxes = netBeforeTax > 0 ? (netBeforeTax * taxRatePct) / 100 : 0;
+  const net = netBeforeTax - taxes;
+
   const channels = (month.channels || []).map((c) => {
     const spend = Number(c.spend) || 0;
     const rev = Number(c.revenue) || 0;
@@ -167,19 +172,14 @@ export function computeMonth(state, y, m) {
       segment,
       spend,
       revenue: rev,
-      romi,
-      profit,
-      cogsAlloc,
-      taxAlloc,
-      netProfitChannel,
+      romi: Number.isFinite(romi) ? romi : 0,
+      profit: Number.isFinite(profit) ? profit : 0,
+      cogsAlloc: Number.isFinite(cogsAlloc) ? cogsAlloc : 0,
+      taxAlloc: Number.isFinite(taxAlloc) ? taxAlloc : 0,
+      netProfitChannel: Number.isFinite(netProfitChannel) ? netProfitChannel : 0,
       delta: Number(c.delta) || 0,
     };
   });
-
-  const totalOpex = marketingTotal + payrollTotal + rentTotal + utilitiesExtra + otherExtra;
-  const netBeforeTax = revenue - cogs - totalOpex;
-  const taxes = netBeforeTax > 0 ? (netBeforeTax * taxRatePct) / 100 : 0;
-  const net = netBeforeTax - taxes;
 
   const avgOrder = orders > 0 ? revenue / orders : 0;
   const mktPerOrder = orders > 0 ? marketingTotal / orders : 0;
@@ -191,44 +191,48 @@ export function computeMonth(state, y, m) {
   const grossMarginRatio = revenue > 0 ? grossProfit / revenue : 0;
   const ltv = grossMarginRatio > 0 ? avgGrossPerOrder * 3 : 0;
   const burnRate = Math.max(0, totalOpex - grossProfit);
-  const runwayMonths = burnRate > 0 ? (Number(state.settings?.currentCash) || 0) / burnRate : Infinity;
+  const cashNum = Number(state.settings?.currentCash);
+  const currentCash = Number.isFinite(cashNum) ? Math.max(0, cashNum) : 0;
+  const runwayMonths = burnRate > 0 ? currentCash / burnRate : Infinity;
+
+  const safeNum = (n, fallback = 0) => (Number.isFinite(Number(n)) ? Number(n) : fallback);
 
   return {
     key,
-    revenue,
-    cogs,
-    marketingTotal,
-    marketingChannels,
-    marketingExtra,
-    payrollTotal,
-    rentTotal,
-    utilitiesExtra,
-    otherExtra,
-    grossProfit,
-    totalOpex,
-    taxRatePct,
-    taxes,
-    netBeforeTax,
-    net,
-    orders,
-    avgOrder,
-    mktPerOrder,
-    contribPerOrder,
-    netPerOrder,
-    purchaseShare,
-    ltv,
-    cac,
-    burnRate,
-    runwayMonths,
+    revenue: safeNum(revenue, 0),
+    cogs: safeNum(cogs, 0),
+    marketingTotal: safeNum(marketingTotal, 0),
+    marketingChannels: safeNum(marketingChannels, 0),
+    marketingExtra: safeNum(marketingExtra, 0),
+    payrollTotal: safeNum(payrollTotal, 0),
+    rentTotal: safeNum(rentTotal, 0),
+    utilitiesExtra: safeNum(utilitiesExtra, 0),
+    otherExtra: safeNum(otherExtra, 0),
+    grossProfit: safeNum(grossProfit, 0),
+    totalOpex: safeNum(totalOpex, 0),
+    taxRatePct: safeNum(taxRatePct, 0),
+    taxes: safeNum(taxes, 0),
+    netBeforeTax: safeNum(netBeforeTax, 0),
+    net: safeNum(net, 0),
+    orders: Math.max(0, Math.floor(safeNum(orders, 0))),
+    avgOrder: safeNum(avgOrder, 0),
+    mktPerOrder: safeNum(mktPerOrder, 0),
+    contribPerOrder: safeNum(contribPerOrder, 0),
+    netPerOrder: safeNum(netPerOrder, 0),
+    purchaseShare: safeNum(purchaseShare, 0),
+    ltv: safeNum(ltv, 0),
+    cac: safeNum(cac, 0),
+    burnRate: safeNum(burnRate, 0),
+    runwayMonths: Number.isFinite(runwayMonths) ? runwayMonths : Infinity,
     channels,
     products: enrichedProducts,
     pie: {
-      cogs,
-      marketing: marketingTotal,
-      payroll: payrollTotal,
-      rent: rentTotal,
-      utilities: utilitiesExtra,
-      other: otherExtra,
+      cogs: safeNum(cogs, 0),
+      marketing: safeNum(marketingTotal, 0),
+      payroll: safeNum(payrollTotal, 0),
+      rent: safeNum(rentTotal, 0),
+      utilities: safeNum(utilitiesExtra, 0),
+      other: safeNum(otherExtra, 0),
     },
     inventory,
   };
@@ -251,25 +255,28 @@ export function computeWithPrev(state, y, m) {
   const whatIfGross = whatIfRevenue - cur.cogs;
   const whatIfNetBeforeTax = whatIfRevenue - cur.cogs - (cur.totalOpex - cur.marketingTotal + whatIfMarketing);
   const whatIfTaxes = whatIfNetBeforeTax > 0 ? (whatIfNetBeforeTax * cur.taxRatePct) / 100 : 0;
-  const whatIfNet = whatIfNetBeforeTax - whatIfTaxes;
-  const burnDeltaPct =
+  const whatIfNetRaw = whatIfNetBeforeTax - whatIfTaxes;
+  const fin = (n, fb = 0) => (Number.isFinite(Number(n)) ? Number(n) : fb);
+  const whatIfNet = fin(whatIfNetRaw, 0);
+  const burnDeltaPctRaw =
     prev.burnRate > 0.01 ? ((cur.burnRate - prev.burnRate) / prev.burnRate) * 100 : 0;
+  const burnDeltaPct = fin(burnDeltaPctRaw, 0);
 
   return {
     ...cur,
     prev,
-    netDeltaPct,
-    revDeltaPct,
-    mktDeltaPct,
-    cogsDeltaPct,
+    netDeltaPct: fin(netDeltaPct, 0),
+    revDeltaPct: fin(revDeltaPct, 0),
+    mktDeltaPct: fin(mktDeltaPct, 0),
+    cogsDeltaPct: fin(cogsDeltaPct, 0),
     burnDeltaPct,
     whatIf: {
       pricePct: whatIfPricePct,
       marketingPct: whatIfMarketingPct,
-      revenue: whatIfRevenue,
-      marketing: whatIfMarketing,
+      revenue: fin(whatIfRevenue, 0),
+      marketing: fin(whatIfMarketing, 0),
       net: whatIfNet,
-      taxes: whatIfTaxes,
+      taxes: fin(whatIfTaxes, 0),
     },
   };
 }

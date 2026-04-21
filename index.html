@@ -145,15 +145,15 @@
         <div id="overviewBlocks" class="grid sm:grid-cols-2 gap-3"></div>
         <div id="kpiGrid" class="grid grid-cols-2 lg:grid-cols-4 gap-3"></div>
         <div id="businessMetricsGrid" class="grid grid-cols-1 md:grid-cols-3 gap-3"></div>
-        <div class="fin-card p-5">
-          <h3 class="font-bold">Что если?</h3>
-          <div class="mt-4 grid md:grid-cols-2 gap-4">
-            <label class="text-xs font-medium text-muted">Цена продажи, % к базовой
-              <input id="whatIfPrice" type="range" min="-30" max="30" step="1" class="mt-2 w-full" />
+        <div class="fin-card p-4">
+          <h3 class="font-bold text-sm">Что если?</h3>
+          <div class="mt-3 space-y-3 max-w-md">
+            <label class="block text-xs font-medium text-muted">Цена продажи, % к базовой
+              <input id="whatIfPrice" type="range" min="-30" max="30" step="1" class="mt-1.5 block w-full max-w-xs" />
               <div class="mt-1 text-sm">Сценарий: <span id="whatIfPriceLabel" class="font-semibold">0%</span></div>
             </label>
-            <label class="text-xs font-medium text-muted">Маркетинг, % к базовому
-              <input id="whatIfMarketing" type="range" min="-50" max="80" step="1" class="mt-2 w-full" />
+            <label class="block text-xs font-medium text-muted">Маркетинг, % к базовому
+              <input id="whatIfMarketing" type="range" min="-50" max="80" step="1" class="mt-1.5 block w-full max-w-xs" />
               <div class="mt-1 text-sm">Сценарий: <span id="whatIfMarketingLabel" class="font-semibold">0%</span></div>
             </label>
           </div>

@@ -496,7 +496,8 @@ function renderWhatIf(data) {
   document.getElementById('whatIfPriceLabel').textContent = `${Number(price.value)}%`;
   document.getElementById('whatIfMarketingLabel').textContent = `${Number(mkt.value)}%`;
   const w = data.whatIf || { net: data.net };
-  document.getElementById('whatIfNet').textContent = money(w.net);
+  const netVal = Number(w.net);
+  document.getElementById('whatIfNet').textContent = money(Number.isFinite(netVal) ? netVal : 0);
 }
 
 function renderBusinessUnit(data) {
@@ -521,9 +522,34 @@ function renderBusinessUnit(data) {
     .join('');
 }
 
+/** Достаточно ли ввода, чтобы осмысленно считать Runway, Burn и ROMI и показывать инсайты. */
+function hasDataForSmartInsights(data) {
+  const revenue = Number(data.revenue) || 0;
+  const totalOpex = Number(data.totalOpex) || 0;
+  const orders = Number(data.orders) || 0;
+  const mktCh = Number(data.marketingChannels) || 0;
+  const channels = data.channels || [];
+  const channelActivity = channels.some(
+    (c) => (Number(c.spend) || 0) > 0 || (Number(c.revenue) || 0) > 0
+  );
+  return revenue > 0 || orders > 0 || totalOpex > 0 || mktCh > 0 || channelActivity;
+}
+
 function renderSmartInsights(data) {
   const host = document.getElementById('smartInsightsHost');
   if (!host) return;
+  if (!hasDataForSmartInsights(data)) {
+    host.innerHTML = `
+      <div class="flex items-start gap-3">
+        <span class="mt-0.5 text-accent shrink-0"><i data-lucide="sparkles" class="w-5 h-5"></i></span>
+        <div class="min-w-0">
+          <p class="font-bold text-ink">Добро пожаловать!</p>
+          <p class="text-sm text-muted mt-1 leading-relaxed">Добавьте данные о продажах и расходах, чтобы ИИ-помощник смог дать вам советы.</p>
+        </div>
+      </div>`;
+    paintLucideIcons();
+    return;
+  }
   const items = [];
   const runway = data.runwayMonths;
   if (Number.isFinite(runway) && runway < 2) {
