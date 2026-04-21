@@ -3,6 +3,7 @@ import {
   coreDataFromState,
   defaultDataSource,
   defaultIntegrations,
+  defaultBusinessSettings,
 } from './data/seedState.js';
 
 export const STORAGE_KEY = 'profitPlatformAccount:v2';
@@ -61,9 +62,18 @@ function migrateParsed(parsed) {
     parsed.preImportBackups = Array.isArray(parsed.preImportBackups) ? parsed.preImportBackups : [];
     parsed.version = 4;
   }
-  if (parsed.version !== 4) return null;
+  if (parsed.version === 4) {
+    parsed.settings = parsed.settings || defaultBusinessSettings();
+    parsed.version = 5;
+  }
+  if (parsed.version !== 5) return null;
   if (!parsed.dataSource) parsed.dataSource = defaultDataSource();
   if (!parsed.integrations) parsed.integrations = defaultIntegrations();
+  if (!parsed.settings) parsed.settings = defaultBusinessSettings();
+  for (const e of parsed.expenseLines || []) {
+    if (!e.status) e.status = 'fact';
+    if (!e.opDate && e.periodKey) e.opDate = `${e.periodKey}-01`;
+  }
   if (!Array.isArray(parsed.preImportBackups)) parsed.preImportBackups = [];
   return parsed;
 }
@@ -117,6 +127,7 @@ export function restorePreImportBackup(backupId) {
     s.expenseLines = structuredClone(p.expenseLines || []);
     s.dataSource = structuredClone(p.dataSource || defaultDataSource());
     s.integrations = structuredClone(p.integrations || defaultIntegrations());
+    s.settings = structuredClone(p.settings || defaultBusinessSettings());
   });
   return true;
 }

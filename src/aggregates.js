@@ -71,9 +71,10 @@ export function computeMonth(state, y, m) {
 
   const marketingTotal = marketingChannels + marketingExtra;
   const grossProfit = revenue - cogs;
+  const taxRatePct = Math.max(0, Number(state.settings?.taxRatePct) || 0);
 
   let soldPieces = 0;
-  const enrichedProducts = saleRows.map((row) => {
+  const enrichedProductsBase = saleRows.map((row) => {
     const { product: p, qty, lineRev, lineCogs } = row;
     soldPieces += qty;
     const share = revenue > 0 ? lineRev / revenue : 0;
@@ -106,6 +107,20 @@ export function computeMonth(state, y, m) {
       soldRevenue: lineRev,
     };
   });
+  const sortedByContrib = [...enrichedProductsBase].sort((a, b) => b.contribTotal - a.contribTotal);
+  const totalContrib = sortedByContrib.reduce((s, p) => s + Math.max(0, p.contribTotal), 0);
+  let cumulative = 0;
+  const abcBySku = new Map();
+  for (const p of sortedByContrib) {
+    cumulative += Math.max(0, p.contribTotal);
+    const share = totalContrib > 0 ? cumulative / totalContrib : 0;
+    const abc = share <= 0.8 ? 'A' : share <= 0.95 ? 'B' : 'C';
+    abcBySku.set(p.sku, abc);
+  }
+  const enrichedProducts = enrichedProductsBase.map((p) => ({
+    ...p,
+    abc: abcBySku.get(p.sku) || 'C',
+  }));
 
   let stockPieces = 0;
   let stockRubPurchase = 0;
@@ -135,13 +150,21 @@ export function computeMonth(state, y, m) {
   });
 
   const totalOpex = marketingTotal + payrollTotal + rentTotal + utilitiesExtra + otherExtra;
-  const net = revenue - cogs - totalOpex;
+  const netBeforeTax = revenue - cogs - totalOpex;
+  const taxes = netBeforeTax > 0 ? (netBeforeTax * taxRatePct) / 100 : 0;
+  const net = netBeforeTax - taxes;
 
   const avgOrder = orders > 0 ? revenue / orders : 0;
   const mktPerOrder = orders > 0 ? marketingTotal / orders : 0;
   const contribPerOrder = orders > 0 ? (grossProfit - marketingTotal) / orders : 0;
   const netPerOrder = orders > 0 ? net / orders : 0;
   const purchaseShare = revenue > 0 ? cogs / revenue : 0;
+  const cac = orders > 0 ? marketingTotal / orders : 0;
+  const avgGrossPerOrder = orders > 0 ? grossProfit / orders : 0;
+  const grossMarginRatio = revenue > 0 ? grossProfit / revenue : 0;
+  const ltv = grossMarginRatio > 0 ? avgGrossPerOrder * 3 : 0;
+  const burnRate = Math.max(0, totalOpex - grossProfit);
+  const runwayMonths = burnRate > 0 ? (Number(state.settings?.currentCash) || 0) / burnRate : Infinity;
 
   return {
     key,
@@ -156,6 +179,9 @@ export function computeMonth(state, y, m) {
     otherExtra,
     grossProfit,
     totalOpex,
+    taxRatePct,
+    taxes,
+    netBeforeTax,
     net,
     orders,
     avgOrder,
@@ -163,6 +189,10 @@ export function computeMonth(state, y, m) {
     contribPerOrder,
     netPerOrder,
     purchaseShare,
+    ltv,
+    cac,
+    burnRate,
+    runwayMonths,
     channels,
     products: enrichedProducts,
     pie: {
@@ -187,7 +217,58 @@ export function computeWithPrev(state, y, m) {
   const mktDeltaPct = prev.marketingTotal ? ((cur.marketingTotal - prev.marketingTotal) / prev.marketingTotal) * 100 : 0;
   const prevCogs = prev.cogs || cur.cogs;
   const cogsDeltaPct = prevCogs ? ((cur.cogs - prevCogs) / prevCogs) * 100 : 0;
-  return { ...cur, prev, netDeltaPct, revDeltaPct, mktDeltaPct, cogsDeltaPct };
+  const whatIfPricePct = Number(state.settings?.whatIfPricePct) || 0;
+  const whatIfMarketingPct = Number(state.settings?.whatIfMarketingPct) || 0;
+  const whatIfRevenue = cur.revenue * (1 + whatIfPricePct / 100);
+  const whatIfMarketing = cur.marketingTotal * (1 + whatIfMarketingPct / 100);
+  const whatIfGross = whatIfRevenue - cur.cogs;
+  const whatIfNetBeforeTax = whatIfRevenue - cur.cogs - (cur.totalOpex - cur.marketingTotal + whatIfMarketing);
+  const whatIfTaxes = whatIfNetBeforeTax > 0 ? (whatIfNetBeforeTax * cur.taxRatePct) / 100 : 0;
+  const whatIfNet = whatIfNetBeforeTax - whatIfTaxes;
+  return {
+    ...cur,
+    prev,
+    netDeltaPct,
+    revDeltaPct,
+    mktDeltaPct,
+    cogsDeltaPct,
+    whatIf: {
+      pricePct: whatIfPricePct,
+      marketingPct: whatIfMarketingPct,
+      revenue: whatIfRevenue,
+      marketing: whatIfMarketing,
+      net: whatIfNet,
+      taxes: whatIfTaxes,
+    },
+  };
+}
+
+export function cashProjection30d(state, fromDate = new Date()) {
+  const start = new Date(fromDate);
+  start.setHours(0, 0, 0, 0);
+  const lines = state.expenseLines || [];
+  const currentCash = Number(state.settings?.currentCash) || 0;
+  let balance = currentCash;
+  let minBalance = balance;
+  const points = [];
+  for (let i = 0; i < 30; i += 1) {
+    const d = new Date(start);
+    d.setDate(start.getDate() + i);
+    const iso = d.toISOString().slice(0, 10);
+    const dayOut = lines
+      .filter((x) => x.opDate === iso && x.status === 'plan')
+      .reduce((s, x) => s + (Number(x.amount) || 0), 0);
+    balance -= dayOut;
+    minBalance = Math.min(minBalance, balance);
+    points.push({ date: iso, balance });
+  }
+  return {
+    currentCash,
+    forecastBalance: balance,
+    minBalance,
+    hasCashGap: minBalance < 0,
+    points,
+  };
 }
 
 /** Серия для графика прибыли: все ключи месяцев из state + сортировка */

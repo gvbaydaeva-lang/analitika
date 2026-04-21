@@ -15,6 +15,7 @@ export function coreDataFromState(s) {
     expenseLines: structuredClone(s.expenseLines || []),
     dataSource: structuredClone(s.dataSource || defaultDataSource()),
     integrations: structuredClone(s.integrations || defaultIntegrations()),
+    settings: structuredClone(s.settings || defaultBusinessSettings()),
   };
 }
 
@@ -35,6 +36,19 @@ export function defaultIntegrations() {
     crmApiKey: '',
     oneCNotes: '',
   };
+}
+
+export function defaultBusinessSettings() {
+  return {
+    taxRatePct: 6,
+    currentCash: 300000,
+    whatIfPricePct: 0,
+    whatIfMarketingPct: 0,
+  };
+}
+
+function firstDayFromPeriodKey(key) {
+  return `${String(key)}-01`;
 }
 
 /** Начальное состояние учёта из демо-периодов */
@@ -94,13 +108,15 @@ export function createSeedState() {
           category: 'utilities',
           amount: line.amount,
           note: line.label,
+          status: 'fact',
+          opDate: firstDayFromPeriodKey(key),
         });
       }
     }
   }
 
   return {
-    version: 4,
+    version: 5,
     catalog,
     months,
     payroll,
@@ -108,6 +124,7 @@ export function createSeedState() {
     expenseLines,
     dataSource: defaultDataSource(),
     integrations: defaultIntegrations(),
+    settings: defaultBusinessSettings(),
     preImportBackups: [],
   };
 }

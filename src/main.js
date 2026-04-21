@@ -15,6 +15,7 @@ import {
 import {
   computeWithPrev,
   computeMonth,
+  cashProjection30d,
   profitSeries,
   MONTH_NAMES,
   EXPENSE_CATEGORIES,
@@ -345,7 +346,7 @@ function renderKpis(data) {
     { label: 'Выручка', value: money(data.revenue), delta: data.revDeltaPct },
     { label: 'Маркетинг', value: money(data.marketingTotal), delta: data.mktDeltaPct },
     { label: 'Закуп (COGS)', value: money(data.cogs), delta: data.cogsDeltaPct },
-    { label: 'Чистая прибыль', value: money(data.net), delta: data.netDeltaPct },
+    { label: 'Чистая прибыль (после налога)', value: money(data.net), delta: data.netDeltaPct },
   ];
   const grid = document.getElementById('kpiGrid');
   if (!grid) return;
@@ -363,6 +364,56 @@ function renderKpis(data) {
       </div>`;
     })
     .join('');
+}
+
+function renderBusinessMetrics(data) {
+  const grid = document.getElementById('businessMetricsGrid');
+  if (!grid) return;
+  const runway =
+    Number.isFinite(data.runwayMonths) && data.runwayMonths < 999 ? `${data.runwayMonths.toFixed(1)} мес` : '∞';
+  const items = [
+    { label: 'LTV / CAC', value: data.cac > 0 ? (data.ltv / data.cac).toFixed(2) : '—', sub: `LTV ${money(data.ltv)} / CAC ${money(data.cac)}` },
+    { label: 'Burn Rate', value: money(data.burnRate), sub: 'Скорость сжигания денег в месяц' },
+    { label: 'Runway', value: runway, sub: `При текущем кэше ${money(getState().settings?.currentCash || 0)}` },
+  ];
+  grid.innerHTML = items
+    .map(
+      (k) => `
+    <div class="rounded-2xl border border-slate-200/80 bg-white p-4 shadow-sm">
+      <p class="text-xs text-muted">${k.label}</p>
+      <p class="text-lg font-bold mt-1">${k.value}</p>
+      <p class="text-[11px] text-muted mt-1">${k.sub}</p>
+    </div>`
+    )
+    .join('');
+}
+
+function renderCashForecast(state) {
+  const el = document.getElementById('cashForecastCard');
+  if (!el) return;
+  const cash = cashProjection30d(state);
+  const risk = cash.hasCashGap
+    ? `<span class="inline-flex rounded-lg bg-red-100 text-red-700 px-2 py-1 text-xs font-semibold">Кассовый разрыв</span>`
+    : `<span class="inline-flex rounded-lg bg-emerald-100 text-emerald-700 px-2 py-1 text-xs font-semibold">Без разрыва</span>`;
+  el.innerHTML = `
+    <div class="flex flex-wrap items-center gap-3">
+      ${risk}
+      <span class="text-muted">Сейчас: <span class="font-semibold text-ink">${money(cash.currentCash)}</span></span>
+      <span class="text-muted">Через 30 дней: <span class="font-semibold text-ink">${money(cash.forecastBalance)}</span></span>
+      <span class="text-muted">Минимум: <span class="font-semibold ${cash.minBalance < 0 ? 'text-red-700' : 'text-ink'}">${money(cash.minBalance)}</span></span>
+    </div>`;
+}
+
+function renderWhatIf(data) {
+  const price = document.getElementById('whatIfPrice');
+  const mkt = document.getElementById('whatIfMarketing');
+  if (!price || !mkt) return;
+  price.value = String(data.whatIf?.pricePct || 0);
+  mkt.value = String(data.whatIf?.marketingPct || 0);
+  document.getElementById('whatIfPriceLabel').textContent = `${Number(price.value)}%`;
+  document.getElementById('whatIfMarketingLabel').textContent = `${Number(mkt.value)}%`;
+  const w = data.whatIf || { net: data.net };
+  document.getElementById('whatIfNet').textContent = money(w.net);
 }
 
 function renderBusinessUnit(data) {
@@ -394,7 +445,10 @@ function renderDashboard(state) {
   renderDataSourceStrip(state);
   renderOverview(data);
   renderKpis(data);
+  renderBusinessMetrics(data);
   renderInventoryKpis(data);
+  renderCashForecast(state);
+  renderWhatIf(data);
   updateCharts(state);
 }
 
@@ -483,6 +537,7 @@ function renderSales(state, readOnly = true) {
       .map(
         (p) => `<tr class="border-t border-slate-100">
       <td class="p-3">${escapeHtml(p.sku)} <span class="text-muted text-xs">(${escapeHtml(p.cat)})</span></td>
+      <td class="p-3"><span class="inline-flex px-2 py-0.5 rounded-full text-xs font-semibold ${p.abc === 'A' ? 'bg-emerald-100 text-emerald-700' : p.abc === 'B' ? 'bg-amber-100 text-amber-700' : 'bg-slate-100 text-slate-700'}">${p.abc}</span></td>
       <td class="p-3">${p.soldQty}</td>
       <td class="p-3 font-medium">${money(p.soldRevenue)}</td>
       <td class="p-3">${p.stockQty}</td>
@@ -545,8 +600,10 @@ function renderExpenseLinesHtml(lines, readOnly) {
       const del = readOnly
         ? ''
         : `<button type="button" data-del-expense="${e.id}" class="text-xs text-red-600 hover:underline w-full text-left sm:w-auto">Удалить</button>`;
+      const statusLabel = e.status === 'plan' ? 'план' : 'факт';
+      const dateLabel = e.opDate || e.periodKey || '';
       return `<li class="flex flex-wrap justify-between gap-2 px-4 py-3 bg-white">
-            <span><span class="font-medium">${escapeHtml(cat?.label || e.category)}</span> — ${escapeHtml(e.note || '—')}</span>
+            <span><span class="font-medium">${escapeHtml(cat?.label || e.category)}</span> — ${escapeHtml(e.note || '—')} <span class="text-xs text-muted">(${escapeHtml(statusLabel)}, ${escapeHtml(dateLabel)})</span></span>
             <span class="font-semibold">${money(e.amount)}</span>
             ${del}
           </li>`;
@@ -656,14 +713,24 @@ function renderDataHub(state) {
   renderPeriodHeader();
   renderBackupList(state);
   const int = state.integrations || {};
+  const settings = state.settings || {};
   const g = document.getElementById('intGoogleKey');
   const m = document.getElementById('intMoiskladKey');
   const c = document.getElementById('intCrmKey');
   const n = document.getElementById('intOneCNotes');
+  const tax = document.getElementById('settingTaxRate');
+  const cash = document.getElementById('settingCurrentCash');
   if (g) g.value = int.googleSheetsApiKey || '';
   if (m) m.value = int.moiskladApiKey || '';
   if (c) c.value = int.crmApiKey || '';
   if (n) n.value = int.oneCNotes || '';
+  if (tax) tax.value = String(settings.taxRatePct ?? 0);
+  if (cash) cash.value = String(settings.currentCash ?? 0);
+  const expDate = document.getElementById('expenseDate');
+  if (expDate && !expDate.value) {
+    const { y, m: mo } = getYM();
+    expDate.value = `${y}-${String(mo).padStart(2, '0')}-01`;
+  }
   updateHubLockUi();
 }
 
@@ -835,12 +902,16 @@ function wireExpenses() {
     const fd = new FormData(e.target);
     patchState((s) => {
       s.expenseLines = s.expenseLines || [];
+      const opDateRaw = String(fd.get('opDate') || '').trim();
+      const status = String(fd.get('status') || 'fact') === 'plan' ? 'plan' : 'fact';
       s.expenseLines.push({
         id: uid('exp'),
         periodKey: key,
         category: String(fd.get('category') || 'other'),
         amount: Math.max(0, Number(fd.get('amount')) || 0),
         note: String(fd.get('note') || '').trim(),
+        status,
+        opDate: opDateRaw || `${key}-01`,
       });
     });
     setDataSourceMeta({ kind: 'manual', format: null, label: 'Ручной ввод расхода' });
@@ -981,6 +1052,8 @@ function wireDataHub() {
     const m = document.getElementById('intMoiskladKey')?.value ?? '';
     const c = document.getElementById('intCrmKey')?.value ?? '';
     const n = document.getElementById('intOneCNotes')?.value ?? '';
+    const tax = Math.max(0, Math.min(100, Number(document.getElementById('settingTaxRate')?.value) || 0));
+    const cash = Math.max(0, Number(document.getElementById('settingCurrentCash')?.value) || 0);
     patchState((s) => {
       s.integrations = {
         googleSheetsApiKey: String(g),
@@ -988,10 +1061,30 @@ function wireDataHub() {
         crmApiKey: String(c),
         oneCNotes: String(n),
       };
+      s.settings = {
+        ...(s.settings || {}),
+        taxRatePct: tax,
+        currentCash: cash,
+      };
     });
     setDataSourceMeta({ kind: 'settings', format: null, label: 'Настройки интеграций' });
     showToast('Настройки интеграций сохранены.');
   });
+}
+
+function wireWhatIf() {
+  const price = document.getElementById('whatIfPrice');
+  const mkt = document.getElementById('whatIfMarketing');
+  if (!price || !mkt) return;
+  const apply = () => {
+    patchState((s) => {
+      s.settings = s.settings || {};
+      s.settings.whatIfPricePct = Number(price.value) || 0;
+      s.settings.whatIfMarketingPct = Number(mkt.value) || 0;
+    });
+  };
+  price.addEventListener('input', apply);
+  mkt.addEventListener('input', apply);
 }
 
 function wireReset() {
@@ -1077,6 +1170,7 @@ wireSales();
 wireExpenses();
 wireCatalog();
 wireDataHub();
+wireWhatIf();
 wireReset();
 wirePersist();
 wireImportCatalog();
