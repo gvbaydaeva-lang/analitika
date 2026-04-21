@@ -118,14 +118,6 @@ function escapeHtml(s) {
     .replace(/>/g, '&gt;');
 }
 
-/** Подпись процента для слайдеров «Что если?» (+5%, −3%, 0%). */
-function formatScenarioPct(raw) {
-  const v = Math.round(Number(raw) || 0);
-  if (v > 0) return `+${v}%`;
-  if (v < 0) return `−${Math.abs(v)}%`;
-  return '0%';
-}
-
 function getYM() {
   const yRaw = Number(document.getElementById('selectYear')?.value);
   const mRaw = Number(document.getElementById('selectMonth')?.value);
@@ -495,17 +487,63 @@ function renderBusinessMetrics(data) {
     .join('');
 }
 
+const WHATIF_PRICE_BOUNDS = { min: -30, max: 30 };
+const WHATIF_MKT_BOUNDS = { min: -50, max: 80 };
+
+function clampWhatIfPct(n, min, max) {
+  const v = Math.round(Number(n));
+  if (!Number.isFinite(v)) return 0;
+  return Math.max(min, Math.min(max, v));
+}
+
+/** null — неполный ввод (например «-»), не перезаписывать поле при расчёте. */
+function parseWhatIfPctInput(raw, min, max) {
+  const t = String(raw ?? '')
+    .trim()
+    .replace(/−/g, '-')
+    .replace(',', '.');
+  if (t === '' || t === '-') return null;
+  const n = Number(t);
+  if (!Number.isFinite(n)) return null;
+  return clampWhatIfPct(n, min, max);
+}
+
 function renderWhatIf(data) {
   const price = document.getElementById('whatIfPrice');
   const mkt = document.getElementById('whatIfMarketing');
-  if (!price || !mkt) return;
-  price.value = String(data.whatIf?.pricePct || 0);
-  mkt.value = String(data.whatIf?.marketingPct || 0);
-  document.getElementById('whatIfPriceLabel').textContent = formatScenarioPct(price.value);
-  document.getElementById('whatIfMarketingLabel').textContent = formatScenarioPct(mkt.value);
+  const netEl = document.getElementById('whatIfNet');
+  const deltaEl = document.getElementById('whatIfNetDelta');
+  if (!price || !mkt || !netEl || !deltaEl) return;
+
+  const pPct = Math.round(Number(data.whatIf?.pricePct) || 0);
+  const mPct = Math.round(Number(data.whatIf?.marketingPct) || 0);
+  if (document.activeElement !== price) {
+    price.value = String(clampWhatIfPct(pPct, WHATIF_PRICE_BOUNDS.min, WHATIF_PRICE_BOUNDS.max));
+  }
+  if (document.activeElement !== mkt) {
+    mkt.value = String(clampWhatIfPct(mPct, WHATIF_MKT_BOUNDS.min, WHATIF_MKT_BOUNDS.max));
+  }
+
+  const baselineNet = Number.isFinite(Number(data.net)) ? Number(data.net) : 0;
   const w = data.whatIf || { net: data.net };
-  const netVal = Number(w.net);
-  document.getElementById('whatIfNet').textContent = money(Number.isFinite(netVal) ? netVal : 0);
+  const scenarioNet = Number.isFinite(Number(w.net)) ? Number(w.net) : baselineNet;
+  netEl.textContent = money(scenarioNet);
+
+  const dNet = Math.round(scenarioNet - baselineNet);
+  const baseNetCls = 'text-base font-bold tabular-nums leading-tight mt-0.5';
+  if (dNet > 0) {
+    netEl.className = `${baseNetCls} text-emerald-600`;
+    deltaEl.className = 'text-[11px] font-medium text-emerald-600 mt-0.5 tabular-nums';
+    deltaEl.textContent = `Δ +${money(Math.abs(dNet))} к текущему месяцу`;
+  } else if (dNet < 0) {
+    netEl.className = `${baseNetCls} text-red-600`;
+    deltaEl.className = 'text-[11px] font-medium text-red-600 mt-0.5 tabular-nums';
+    deltaEl.textContent = `Δ −${money(Math.abs(dNet))} к текущему месяцу`;
+  } else {
+    netEl.className = `${baseNetCls} text-ink`;
+    deltaEl.className = 'text-[11px] text-muted mt-0.5 tabular-nums';
+    deltaEl.textContent = 'Δ ' + money(0) + ' к текущему месяцу';
+  }
 }
 
 function renderBusinessUnit(data) {
@@ -1548,23 +1586,88 @@ function wireAddOperation() {
 function wireWhatIf() {
   const price = document.getElementById('whatIfPrice');
   const mkt = document.getElementById('whatIfMarketing');
-  const priceLbl = document.getElementById('whatIfPriceLabel');
-  const mktLbl = document.getElementById('whatIfMarketingLabel');
-  if (!price || !mkt || !priceLbl || !mktLbl) return;
-  const syncLabels = () => {
-    priceLbl.textContent = formatScenarioPct(price.value);
-    mktLbl.textContent = formatScenarioPct(mkt.value);
+  const pm = document.getElementById('whatIfPriceMinus');
+  const pp = document.getElementById('whatIfPricePlus');
+  const mm = document.getElementById('whatIfMarketingMinus');
+  const mp = document.getElementById('whatIfMarketingPlus');
+  if (!price || !mkt) return;
+
+  const { min: pMin, max: pMax } = WHATIF_PRICE_BOUNDS;
+  const { min: mMin, max: mMax } = WHATIF_MKT_BOUNDS;
+
+  const fromState = () => {
+    const st = getState().settings || {};
+    return {
+      p: clampWhatIfPct(Number(st.whatIfPricePct) || 0, pMin, pMax),
+      m: clampWhatIfPct(Number(st.whatIfMarketingPct) || 0, mMin, mMax),
+    };
   };
-  const apply = () => {
-    syncLabels();
+
+  const commit = (p, m) => {
     patchState((s) => {
       s.settings = s.settings || {};
-      s.settings.whatIfPricePct = Number(price.value) || 0;
-      s.settings.whatIfMarketingPct = Number(mkt.value) || 0;
+      s.settings.whatIfPricePct = clampWhatIfPct(p, pMin, pMax);
+      s.settings.whatIfMarketingPct = clampWhatIfPct(m, mMin, mMax);
     });
   };
-  price.addEventListener('input', apply);
-  mkt.addEventListener('input', apply);
+
+  const applyFromInputs = () => {
+    const pr = parseWhatIfPctInput(price.value, pMin, pMax);
+    const mr = parseWhatIfPctInput(mkt.value, mMin, mMax);
+    const { p: sp, m: sm } = fromState();
+    const pVal = pr === null ? sp : pr;
+    const mVal = mr === null ? sm : mr;
+    if (pr !== null) price.value = String(pVal);
+    if (mr !== null) mkt.value = String(mVal);
+    if (pr === null && mr === null) return;
+    commit(pVal, mVal);
+  };
+
+  price.addEventListener('input', applyFromInputs);
+  mkt.addEventListener('input', applyFromInputs);
+  price.addEventListener('blur', () => {
+    const finP = clampWhatIfPct(parseWhatIfPctInput(price.value, pMin, pMax) ?? 0, pMin, pMax);
+    price.value = String(finP);
+    const mr = parseWhatIfPctInput(mkt.value, mMin, mMax);
+    const { m: sm } = fromState();
+    const finM = mr === null ? sm : mr;
+    if (mr !== null) mkt.value = String(finM);
+    commit(finP, finM);
+  });
+  mkt.addEventListener('blur', () => {
+    const finM = clampWhatIfPct(parseWhatIfPctInput(mkt.value, mMin, mMax) ?? 0, mMin, mMax);
+    mkt.value = String(finM);
+    const pr = parseWhatIfPctInput(price.value, pMin, pMax);
+    const { p: sp } = fromState();
+    const finP = pr === null ? sp : pr;
+    if (pr !== null) price.value = String(finP);
+    commit(finP, finM);
+  });
+
+  pm?.addEventListener('click', () => {
+    const { p, m } = fromState();
+    const next = clampWhatIfPct(p - 1, pMin, pMax);
+    price.value = String(next);
+    commit(next, m);
+  });
+  pp?.addEventListener('click', () => {
+    const { p, m } = fromState();
+    const next = clampWhatIfPct(p + 1, pMin, pMax);
+    price.value = String(next);
+    commit(next, m);
+  });
+  mm?.addEventListener('click', () => {
+    const { p, m } = fromState();
+    const next = clampWhatIfPct(m - 1, mMin, mMax);
+    mkt.value = String(next);
+    commit(p, next);
+  });
+  mp?.addEventListener('click', () => {
+    const { p, m } = fromState();
+    const next = clampWhatIfPct(m + 1, mMin, mMax);
+    mkt.value = String(next);
+    commit(p, next);
+  });
 }
 
 function wireReset() {

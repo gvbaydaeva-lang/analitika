@@ -43,12 +43,11 @@
     .period-glow {
       background: linear-gradient(135deg, rgba(45,157,140,0.1) 0%, rgba(79,70,229,0.08) 100%);
     }
-    /* Слайдеры «Что если?» — компактная ширина, без растягивания на весь экран */
-    .what-if-range {
-      width: 100%;
-      max-width: 100%;
-      height: 0.5rem;
-      accent-color: #6366f1;
+    .what-if-step-btn {
+      min-width: 1.75rem;
+      height: 1.75rem;
+      line-height: 1;
+      padding: 0;
     }
     /* Тост не должен перехватывать клики по странице, когда скрыт */
     #toastHost {
@@ -152,32 +151,32 @@
         <div id="overviewBlocks" class="grid sm:grid-cols-2 gap-3"></div>
         <div id="kpiGrid" class="grid grid-cols-2 lg:grid-cols-4 gap-3"></div>
         <div id="businessMetricsGrid" class="grid grid-cols-1 md:grid-cols-3 gap-3"></div>
-        <div class="fin-card p-4 w-full max-w-[500px]">
-          <h3 class="font-bold text-sm text-ink">Что если?</h3>
-          <p class="text-xs text-muted mt-1">Сценарии относительно выбранного месяца</p>
-          <div class="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-5">
-            <div class="min-w-0">
-              <p class="text-xs font-semibold text-ink">Цена продажи</p>
-              <p class="text-[11px] text-muted mt-0.5">% к базовой выручке</p>
-              <div class="mt-2 flex items-center gap-2 text-[10px] text-muted tabular-nums shrink-0">
-                <span class="w-8 text-right">−30%</span>
-                <input id="whatIfPrice" type="range" min="-30" max="30" step="1" class="what-if-range flex-1 min-w-0" />
-                <span class="w-8">+30%</span>
-              </div>
-              <p class="mt-2 text-xs"><span class="text-muted">Текущее значение:</span> <span id="whatIfPriceLabel" class="font-semibold text-ink tabular-nums">0%</span></p>
+        <div class="fin-card px-3 py-2.5 w-full max-w-md border border-slate-100 shadow-sm">
+          <div class="flex items-center justify-between gap-2">
+            <h3 class="font-bold text-xs text-ink uppercase tracking-wide">Что если?</h3>
+            <span class="text-[10px] text-muted whitespace-nowrap">к базе месяца</span>
+          </div>
+          <div class="mt-2 flex flex-wrap items-center gap-x-4 gap-y-2">
+            <div class="flex items-center gap-1 min-w-0">
+              <span class="text-[10px] font-medium text-muted w-[3.25rem] shrink-0 leading-tight">Цена<br/><span class="font-normal opacity-80">−30…+30</span></span>
+              <button type="button" id="whatIfPriceMinus" class="what-if-step-btn inline-flex items-center justify-center rounded-lg border border-slate-200 bg-white text-sm font-semibold text-ink hover:bg-slate-50 active:bg-slate-100" aria-label="Уменьшить процент цены на 1">−</button>
+              <input id="whatIfPrice" type="text" inputmode="numeric" autocomplete="off" spellcheck="false" maxlength="4" class="w-11 shrink-0 rounded-lg border border-slate-200 bg-white py-1 px-1 text-center text-sm font-semibold text-ink tabular-nums focus:ring-2 focus:ring-brand-500/30 outline-none" value="0" />
+              <button type="button" id="whatIfPricePlus" class="what-if-step-btn inline-flex items-center justify-center rounded-lg border border-slate-200 bg-white text-sm font-semibold text-ink hover:bg-slate-50 active:bg-slate-100" aria-label="Увеличить процент цены на 1">+</button>
+              <span class="text-xs text-muted shrink-0">%</span>
             </div>
-            <div class="min-w-0">
-              <p class="text-xs font-semibold text-ink">Маркетинг</p>
-              <p class="text-[11px] text-muted mt-0.5">% к базовому бюджету</p>
-              <div class="mt-2 flex items-center gap-2 text-[10px] text-muted tabular-nums shrink-0">
-                <span class="w-8 text-right">−50%</span>
-                <input id="whatIfMarketing" type="range" min="-50" max="80" step="1" class="what-if-range flex-1 min-w-0" />
-                <span class="w-8">+80%</span>
-              </div>
-              <p class="mt-2 text-xs"><span class="text-muted">Текущее значение:</span> <span id="whatIfMarketingLabel" class="font-semibold text-ink tabular-nums">0%</span></p>
+            <div class="flex items-center gap-1 min-w-0">
+              <span class="text-[10px] font-medium text-muted w-[3.25rem] shrink-0 leading-tight">Маркет.<br/><span class="font-normal opacity-80">−50…+80</span></span>
+              <button type="button" id="whatIfMarketingMinus" class="what-if-step-btn inline-flex items-center justify-center rounded-lg border border-slate-200 bg-white text-sm font-semibold text-ink hover:bg-slate-50 active:bg-slate-100" aria-label="Уменьшить процент маркетинга на 1">−</button>
+              <input id="whatIfMarketing" type="text" inputmode="numeric" autocomplete="off" spellcheck="false" maxlength="4" class="w-11 shrink-0 rounded-lg border border-slate-200 bg-white py-1 px-1 text-center text-sm font-semibold text-ink tabular-nums focus:ring-2 focus:ring-brand-500/30 outline-none" value="0" />
+              <button type="button" id="whatIfMarketingPlus" class="what-if-step-btn inline-flex items-center justify-center rounded-lg border border-slate-200 bg-white text-sm font-semibold text-ink hover:bg-slate-50 active:bg-slate-100" aria-label="Увеличить процент маркетинга на 1">+</button>
+              <span class="text-xs text-muted shrink-0">%</span>
             </div>
           </div>
-          <div class="mt-4 pt-3 border-t border-slate-100 text-sm"><span class="text-muted">Прогноз чистой прибыли:</span> <span id="whatIfNet" class="font-bold text-ink">—</span></div>
+          <div class="mt-2 pt-2 border-t border-slate-100">
+            <span class="text-[10px] font-medium text-muted uppercase tracking-wide">Прогноз чистой прибыли</span>
+            <div id="whatIfNet" class="text-base font-bold tabular-nums leading-tight mt-0.5 text-ink">—</div>
+            <p id="whatIfNetDelta" class="text-[11px] text-muted mt-0.5 tabular-nums min-h-[1rem]"></p>
+          </div>
         </div>
         <div>
           <h3 class="text-sm font-bold text-ink mb-2 flex items-center gap-2">
