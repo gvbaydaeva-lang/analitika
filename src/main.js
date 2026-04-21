@@ -15,11 +15,11 @@ import {
 import {
   computeWithPrev,
   computeMonth,
-  cashProjection30d,
   profitSeries,
   MONTH_NAMES,
   EXPENSE_CATEGORIES,
   periodKey,
+  buildPaymentCalendarMatrix,
 } from './aggregates.js';
 import { ensureMonth, getMergedSales, writeMergedSales } from './domain/monthModel.js';
 import { parseImportFile } from './data/importParse.js';
@@ -28,11 +28,25 @@ import { dataRepository } from './data/repository.js';
 let chartProfit = null;
 let chartPie = null;
 let activeTab = sessionStorage.getItem('profitTab') || 'dashboard';
+if (activeTab === 'sales' || activeTab === 'expenses' || activeTab === 'datahub') {
+  activeTab = 'operations';
+  sessionStorage.setItem('profitTab', 'operations');
+}
+
+function getCurrencyCode() {
+  try {
+    const c = getState().settings?.currency;
+    if (c === 'USD' || c === 'EUR') return c;
+  } catch {
+    /* ignore */
+  }
+  return 'RUB';
+}
 
 function money(n) {
   return new Intl.NumberFormat('ru-RU', {
     style: 'currency',
-    currency: 'RUB',
+    currency: getCurrencyCode(),
     maximumFractionDigits: 0,
   }).format(Number(n) || 0);
 }
@@ -208,22 +222,71 @@ function renderPeriodHeader() {
   const { y, m } = getYM();
   document.getElementById('periodTitle').textContent = `${MONTH_NAMES[m - 1]} ${y}`;
   document.getElementById('periodSubtitle').textContent =
-    `Период: ${MONTH_NAMES[m - 1]} ${y}. Показатели считаются из единого источника (данные в этом браузере). Редактирование — только в «Интеграции и загрузка».`;
+    `Период: ${MONTH_NAMES[m - 1]} ${y}. Показатели считаются из единого источника (данные в этом браузере). Правки — в «Операциях», «Справочнике» и «Настройках».`;
 }
 
-const HUB_UNLOCK_KEY = 'profitDataHubUnlock';
-
-function isHubUnlocked() {
-  return sessionStorage.getItem(HUB_UNLOCK_KEY) === '1';
+function relativeTimeRu(iso) {
+  if (!iso) return null;
+  const t = new Date(iso).getTime();
+  if (Number.isNaN(t)) return null;
+  const diffMin = Math.floor((Date.now() - t) / 60000);
+  if (diffMin < 1) return 'только что';
+  try {
+    const rtf = new Intl.RelativeTimeFormat('ru', { numeric: 'auto' });
+    if (diffMin < 60) return rtf.format(-diffMin, 'minute');
+    const diffH = Math.floor(diffMin / 60);
+    if (diffH < 48) return rtf.format(-diffH, 'hour');
+    const diffD = Math.floor(diffH / 24);
+    return rtf.format(-diffD, 'day');
+  } catch {
+    if (diffMin < 60) return `${diffMin} минут назад`;
+    return `${Math.floor(diffMin / 60)} ч. назад`;
+  }
 }
 
-function updateHubLockUi() {
-  const on = isHubUnlocked();
-  document.querySelectorAll('.hub-guard').forEach((el) => {
-    el.classList.toggle('hidden', !on);
+function renderSheetsSyncIndicator(state) {
+  const el = document.getElementById('sheetsSyncIndicator');
+  if (!el) return;
+  const iso = state.settings?.lastSheetsSyncAt;
+  const rel = relativeTimeRu(iso);
+  el.textContent = rel
+    ? `Последнее обновление из Google Sheets: ${rel}`
+    : 'Синхронизация с Google Sheets ещё не выполнялась.';
+}
+
+function renderPaymentCalendar(state) {
+  const wrap = document.getElementById('paymentCalendarWrap');
+  if (!wrap) return;
+  const { y, m } = getYM();
+  const mat = buildPaymentCalendarMatrix(state, y, m);
+  const fmt = (v) =>
+    new Intl.NumberFormat('ru-RU', {
+      style: 'currency',
+      currency: getCurrencyCode(),
+      maximumFractionDigits: 0,
+    }).format(Number(v) || 0);
+  const ths = [
+    '<th class="p-2 text-left font-semibold text-muted sticky left-0 bg-slate-50 z-10 min-w-[160px] border-b border-slate-200">Категория</th>',
+  ].concat(
+    mat.dayLabels.map(
+      (d, i) =>
+        `<th class="p-1.5 text-center text-[11px] font-semibold border-b border-slate-200 min-w-[72px] ${mat.gapCols[i] ? 'cal-col-gap' : 'bg-slate-50'}">${escapeHtml(d)}</th>`
+    )
+  );
+  const rowHtml = mat.rows.map((r) => {
+    const tds = r.cells.map((cell, i) => {
+      const gap = mat.gapCols[i] ? 'cal-col-gap' : '';
+      return `<td class="p-1.5 text-right text-[11px] border-t border-slate-100 ${gap}">${fmt(cell)}</td>`;
+    });
+    return `<tr><td class="p-2 text-xs font-medium sticky left-0 bg-white border-t border-slate-100">${escapeHtml(r.label)}</td>${tds.join('')}</tr>`;
   });
-  const badge = document.getElementById('hubLockBadge');
-  if (badge) badge.textContent = on ? 'Режим редактирования' : 'Заблокировано';
+  const totalRow = `<tr class="text-muted"><td class="p-2 text-xs font-semibold sticky left-0 bg-white border-t border-slate-100">Всего списаний / день</td>${mat.dailyTotal
+    .map((v, i) => `<td class="p-1.5 text-right text-[11px] border-t border-slate-100 ${mat.gapCols[i] ? 'cal-col-gap' : ''}">${fmt(v)}</td>`)
+    .join('')}</tr>`;
+  const balRow = `<tr class="font-semibold bg-slate-50/90"><td class="p-2 text-xs sticky left-0 bg-slate-50/90 border-t border-slate-200">Остаток кассы (после дня)</td>${mat.balances
+    .map((b, i) => `<td class="p-1.5 text-right text-[11px] border-t border-slate-200 ${mat.gapCols[i] ? 'cal-col-gap' : ''}">${fmt(b)}</td>`)
+    .join('')}</tr>`;
+  wrap.innerHTML = `<table class="text-ink border-collapse min-w-max w-full"><thead><tr>${ths.join('')}</tr></thead><tbody>${rowHtml.join('')}${totalRow}${balRow}</tbody></table>`;
 }
 
 function formatSourceDate(iso) {
@@ -388,22 +451,6 @@ function renderBusinessMetrics(data) {
     .join('');
 }
 
-function renderCashForecast(state) {
-  const el = document.getElementById('cashForecastCard');
-  if (!el) return;
-  const cash = cashProjection30d(state);
-  const risk = cash.hasCashGap
-    ? `<span class="inline-flex rounded-lg bg-red-100 text-red-700 px-2 py-1 text-xs font-semibold">Кассовый разрыв</span>`
-    : `<span class="inline-flex rounded-lg bg-emerald-100 text-emerald-700 px-2 py-1 text-xs font-semibold">Без разрыва</span>`;
-  el.innerHTML = `
-    <div class="flex flex-wrap items-center gap-3">
-      ${risk}
-      <span class="text-muted">Сейчас: <span class="font-semibold text-ink">${money(cash.currentCash)}</span></span>
-      <span class="text-muted">Через 30 дней: <span class="font-semibold text-ink">${money(cash.forecastBalance)}</span></span>
-      <span class="text-muted">Минимум: <span class="font-semibold ${cash.minBalance < 0 ? 'text-red-700' : 'text-ink'}">${money(cash.minBalance)}</span></span>
-    </div>`;
-}
-
 function renderWhatIf(data) {
   const price = document.getElementById('whatIfPrice');
   const mkt = document.getElementById('whatIfMarketing');
@@ -425,7 +472,7 @@ function renderBusinessUnit(data) {
     { k: 'Вклад на заказ', v: money(data.contribPerOrder), h: data.contribPerOrder >= 0 },
     { k: 'Чистая на заказ', v: money(data.netPerOrder), h: data.netPerOrder >= 0 },
   ];
-  const el = document.getElementById('businessUnitGrid');
+  const el = document.getElementById('opsBusinessUnitGrid');
   if (!el) return;
   el.innerHTML = rows
     .map(
@@ -447,7 +494,6 @@ function renderDashboard(state) {
   renderKpis(data);
   renderBusinessMetrics(data);
   renderInventoryKpis(data);
-  renderCashForecast(state);
   renderWhatIf(data);
   updateCharts(state);
 }
@@ -505,34 +551,26 @@ function renderChannelsRows(data, readOnly) {
     .join('');
 }
 
-/** @param {boolean} readOnly — просмотр на вкладке «Продажи»; false — редактирование в Data Hub */
-function renderSales(state, readOnly = true) {
+/** Вкладка «Операции»: продажи, каналы, юнит-экономика — редактируемые поля в таблицах. */
+function renderSales(state) {
   const { y, m } = getYM();
   const key = periodKey(y, m);
   const data = computeWithPrev(state, y, m);
   renderPeriodHeader();
 
-  const qtyBodyId = readOnly ? 'salesQtyBody' : 'hubSalesQtyBody';
-  const chBodyId = readOnly ? 'channelsEditBody' : 'hubChannelsEditBody';
-
-  const tbody = document.getElementById(qtyBodyId);
-  if (tbody) tbody.innerHTML = renderSalesTableRows(state, key, readOnly);
+  const tbody = document.getElementById('opsSalesQtyBody');
+  if (tbody) tbody.innerHTML = renderSalesTableRows(state, key, false);
 
   const month = ensureMonth(state, key);
   const ordVal = month.orders ?? data.orders;
-  if (readOnly) {
-    const disp = document.getElementById('displayOrders');
-    if (disp) disp.textContent = String(ordVal ?? 0);
-  } else {
-    const hubOrd = document.getElementById('hubInputOrders');
-    if (hubOrd) hubOrd.value = ordVal;
-  }
+  const ordInput = document.getElementById('opsInputOrders');
+  if (ordInput) ordInput.value = ordVal;
 
-  const chBody = document.getElementById(chBodyId);
-  if (chBody) chBody.innerHTML = renderChannelsRows(data, readOnly);
+  const chBody = document.getElementById('opsChannelsBody');
+  if (chBody) chBody.innerHTML = renderChannelsRows(data, false);
 
-  const unitBody = document.getElementById('unitBody');
-  if (unitBody && readOnly) {
+  const unitBody = document.getElementById('opsUnitBody');
+  if (unitBody) {
     unitBody.innerHTML = data.products
       .map(
         (p) => `<tr class="border-t border-slate-100">
@@ -552,7 +590,7 @@ function renderSales(state, readOnly = true) {
       .join('');
   }
 
-  if (readOnly) renderBusinessUnit(data);
+  renderBusinessUnit(data);
 }
 
 function renderPayrollRows(rows, readOnly) {
@@ -565,9 +603,9 @@ function renderPayrollRows(rows, readOnly) {
       <td class="p-2 font-medium">${money(r.amount)}</td>
     </tr>`
         : `<tr class="border-t border-slate-100">
-      <td class="p-2">${escapeHtml(r.fullName)}</td>
-      <td class="p-2 text-muted">${escapeHtml(r.position || '—')}</td>
-      <td class="p-2 font-medium">${money(r.amount)}</td>
+      <td class="p-2"><input type="text" data-payroll-name="${r.id}" class="w-full max-w-[180px] rounded-lg border border-slate-200 px-2 py-1 text-sm" value="${escAttr(r.fullName)}" /></td>
+      <td class="p-2"><input type="text" data-payroll-pos="${r.id}" class="w-28 rounded-lg border border-slate-200 px-2 py-1 text-sm" value="${escAttr(r.position || '')}" /></td>
+      <td class="p-2"><input type="number" data-payroll-amt="${r.id}" min="0" step="1" class="w-28 rounded-lg border border-slate-200 px-2 py-1 text-sm" value="${Number(r.amount) || 0}" /></td>
       <td class="p-2"><button type="button" data-del-payroll="${r.id}" class="text-xs text-red-600 hover:underline">Удалить</button></td>
     </tr>`
     )
@@ -583,8 +621,8 @@ function renderRentRows(rows, readOnly) {
       <td class="p-2 font-medium">${money(r.amount)}</td>
     </tr>`
         : `<tr class="border-t border-slate-100">
-      <td class="p-2">${escapeHtml(r.title)}</td>
-      <td class="p-2 font-medium">${money(r.amount)}</td>
+      <td class="p-2"><input type="text" data-rent-title="${r.id}" class="w-full max-w-[220px] rounded-lg border border-slate-200 px-2 py-1 text-sm" value="${escAttr(r.title)}" /></td>
+      <td class="p-2"><input type="number" data-rent-amt="${r.id}" min="0" step="1" class="w-28 rounded-lg border border-slate-200 px-2 py-1 text-sm" value="${Number(r.amount) || 0}" /></td>
       <td class="p-2"><button type="button" data-del-rent="${r.id}" class="text-xs text-red-600 hover:underline">Удалить</button></td>
     </tr>`
     )
@@ -602,39 +640,42 @@ function renderExpenseLinesHtml(lines, readOnly) {
         : `<button type="button" data-del-expense="${e.id}" class="text-xs text-red-600 hover:underline w-full text-left sm:w-auto">Удалить</button>`;
       const statusLabel = e.status === 'plan' ? 'план' : 'факт';
       const dateLabel = e.opDate || e.periodKey || '';
-      return `<li class="flex flex-wrap justify-between gap-2 px-4 py-3 bg-white">
-            <span><span class="font-medium">${escapeHtml(cat?.label || e.category)}</span> — ${escapeHtml(e.note || '—')} <span class="text-xs text-muted">(${escapeHtml(statusLabel)}, ${escapeHtml(dateLabel)})</span></span>
-            <span class="font-semibold">${money(e.amount)}</span>
+      const amt = readOnly
+        ? `<span class="font-semibold">${money(e.amount)}</span>`
+        : `<input type="number" data-expense-amt="${e.id}" min="0" step="1" class="w-32 rounded-lg border border-slate-200 px-2 py-1 text-sm font-semibold" value="${Number(e.amount) || 0}" />`;
+      return `<li class="flex flex-wrap justify-between items-center gap-2 px-4 py-3 bg-white">
+            <span class="min-w-0 flex-1"><span class="font-medium">${escapeHtml(cat?.label || e.category)}</span> — ${escapeHtml(e.note || '—')} <span class="text-xs text-muted">(${escapeHtml(statusLabel)}, ${escapeHtml(dateLabel)})</span></span>
+            ${amt}
             ${del}
           </li>`;
     })
     .join('');
 }
 
-/** @param {boolean} readOnly */
-function renderExpenses(state, readOnly = true) {
+function renderExpenses(state) {
   const { y, m } = getYM();
   const key = periodKey(y, m);
   renderPeriodHeader();
 
-  const payId = readOnly ? 'payrollBody' : 'hubPayrollBody';
-  const rentId = readOnly ? 'rentBody' : 'hubRentBody';
-  const listId = readOnly ? 'expenseLinesList' : 'hubExpenseLinesList';
+  const pay = document.getElementById('opsPayrollBody');
+  if (pay) pay.innerHTML = renderPayrollRows(state.payroll, false);
 
-  const pay = document.getElementById(payId);
-  if (pay) pay.innerHTML = renderPayrollRows(state.payroll, readOnly);
-
-  const rent = document.getElementById(rentId);
-  if (rent) rent.innerHTML = renderRentRows(state.rent, readOnly);
+  const rent = document.getElementById('opsRentBody');
+  if (rent) rent.innerHTML = renderRentRows(state.rent, false);
 
   const lines = (state.expenseLines || []).filter((e) => e.periodKey === key);
-  const list = document.getElementById(listId);
-  if (list) list.innerHTML = renderExpenseLinesHtml(lines, readOnly);
+  const list = document.getElementById('opsExpenseLinesList');
+  if (list) list.innerHTML = renderExpenseLinesHtml(lines, false);
 
   const sel = document.getElementById('expenseCategory');
-  if (sel && !readOnly && !sel.dataset.ready) {
+  if (sel && !sel.dataset.ready) {
     sel.innerHTML = EXPENSE_CATEGORIES.map((c) => `<option value="${c.id}">${c.label}</option>`).join('');
     sel.dataset.ready = '1';
+  }
+
+  const expDate = document.getElementById('expenseDate');
+  if (expDate && !expDate.value) {
+    expDate.value = `${y}-${String(m).padStart(2, '0')}-01`;
   }
 }
 
@@ -679,15 +720,13 @@ function renderCatalogRows(state, key, readOnly) {
     .join('');
 }
 
-/** @param {boolean} readOnly */
-function renderCatalog(state, readOnly = true) {
+function renderCatalog(state) {
   const { y, m } = getYM();
   const key = periodKey(y, m);
   renderPeriodHeader();
-  const bodyId = readOnly ? 'catalogBody' : 'hubCatalogBody';
-  const body = document.getElementById(bodyId);
+  const body = document.getElementById('catalogBody');
   if (!body) return;
-  body.innerHTML = renderCatalogRows(state, key, readOnly);
+  body.innerHTML = renderCatalogRows(state, key, false);
 }
 
 function renderBackupList(state) {
@@ -709,7 +748,7 @@ function renderBackupList(state) {
     .join('');
 }
 
-function renderDataHub(state) {
+function renderSettings(state) {
   renderPeriodHeader();
   renderBackupList(state);
   const int = state.integrations || {};
@@ -720,18 +759,16 @@ function renderDataHub(state) {
   const n = document.getElementById('intOneCNotes');
   const tax = document.getElementById('settingTaxRate');
   const cash = document.getElementById('settingCurrentCash');
+  const cur = document.getElementById('settingCurrency');
+  const pin = document.getElementById('settingSessionPin');
   if (g) g.value = int.googleSheetsApiKey || '';
   if (m) m.value = int.moiskladApiKey || '';
   if (c) c.value = int.crmApiKey || '';
   if (n) n.value = int.oneCNotes || '';
   if (tax) tax.value = String(settings.taxRatePct ?? 0);
   if (cash) cash.value = String(settings.currentCash ?? 0);
-  const expDate = document.getElementById('expenseDate');
-  if (expDate && !expDate.value) {
-    const { y, m: mo } = getYM();
-    expDate.value = `${y}-${String(mo).padStart(2, '0')}-01`;
-  }
-  updateHubLockUi();
+  if (cur) cur.value = settings.currency || 'RUB';
+  if (pin) pin.value = String(settings.sessionPin ?? '0000');
 }
 
 function setTab(tab) {
@@ -746,7 +783,6 @@ function setTab(tab) {
   document.querySelectorAll('.tab-panel').forEach((p) => {
     p.classList.toggle('hidden', p.id !== `panel-${tab}`);
   });
-  updateHubLockUi();
   refresh();
 }
 
@@ -755,15 +791,13 @@ function refresh() {
     const state = getState();
     renderPeriodHeader();
     if (activeTab === 'dashboard') renderDashboard(state);
-    else if (activeTab === 'sales') renderSales(state, true);
-    else if (activeTab === 'expenses') renderExpenses(state, true);
-    else if (activeTab === 'catalog') renderCatalog(state, true);
-    else if (activeTab === 'datahub') {
-      renderDataHub(state);
-      renderSales(state, false);
-      renderExpenses(state, false);
-      renderCatalog(state, false);
-    }
+    else if (activeTab === 'operations') {
+      renderSheetsSyncIndicator(state);
+      renderSales(state);
+      renderExpenses(state);
+    } else if (activeTab === 'catalog') renderCatalog(state);
+    else if (activeTab === 'calendar') renderPaymentCalendar(state);
+    else if (activeTab === 'settings') renderSettings(state);
   } catch (e) {
     console.error(e);
     showToast(String(e?.message || e), 'error');
@@ -809,11 +843,10 @@ function initSelects() {
 }
 
 function wireSales() {
-  const panel = document.getElementById('panel-datahub');
+  const panel = document.getElementById('panel-operations');
   if (!panel) return;
 
   panel.addEventListener('change', (e) => {
-    if (!isHubUnlocked()) return;
     const t = e.target;
     const { y, m } = getYM();
     const key = periodKey(y, m);
@@ -831,17 +864,52 @@ function wireSales() {
       return;
     }
 
-    if (t.matches('#hubInputOrders')) {
+    if (t.matches('#opsInputOrders')) {
       const v = Math.max(0, Math.floor(Number(t.value) || 0));
       patchState((s) => {
         ensureMonth(s, key).orders = v;
       });
       setDataSourceMeta({ kind: 'manual', format: null, label: 'Ручное изменение заказов' });
+      return;
+    }
+
+    const pid = t.getAttribute('data-payroll-amt') || t.getAttribute('data-payroll-name') || t.getAttribute('data-payroll-pos');
+    if (pid && (t.matches('[data-payroll-amt]') || t.matches('[data-payroll-name]') || t.matches('[data-payroll-pos]'))) {
+      patchState((s) => {
+        const row = (s.payroll || []).find((r) => r.id === pid);
+        if (!row) return;
+        if (t.matches('[data-payroll-amt]')) row.amount = Math.max(0, Number(t.value) || 0);
+        if (t.matches('[data-payroll-name]')) row.fullName = String(t.value || '').trim();
+        if (t.matches('[data-payroll-pos]')) row.position = String(t.value || '').trim();
+      });
+      setDataSourceMeta({ kind: 'manual', format: null, label: 'Правка ФОТ' });
+      return;
+    }
+
+    const rid = t.getAttribute('data-rent-amt') || t.getAttribute('data-rent-title');
+    if (rid && (t.matches('[data-rent-amt]') || t.matches('[data-rent-title]'))) {
+      patchState((s) => {
+        const row = (s.rent || []).find((r) => r.id === rid);
+        if (!row) return;
+        if (t.matches('[data-rent-amt]')) row.amount = Math.max(0, Number(t.value) || 0);
+        if (t.matches('[data-rent-title]')) row.title = String(t.value || '').trim();
+      });
+      setDataSourceMeta({ kind: 'manual', format: null, label: 'Правка аренды' });
+      return;
+    }
+
+    if (t.matches('[data-expense-amt]')) {
+      const id = t.getAttribute('data-expense-amt');
+      const amt = Math.max(0, Number(t.value) || 0);
+      patchState((s) => {
+        const row = (s.expenseLines || []).find((x) => x.id === id);
+        if (row) row.amount = amt;
+      });
+      setDataSourceMeta({ kind: 'manual', format: null, label: 'Правка расхода' });
     }
   });
 
   panel.addEventListener('change', (e) => {
-    if (!isHubUnlocked()) return;
     const tr = e.target.closest('tr[data-ch-idx]');
     if (!tr) return;
     const idx = +tr.getAttribute('data-ch-idx');
@@ -865,7 +933,6 @@ function wireSales() {
 function wireExpenses() {
   document.getElementById('formPayroll')?.addEventListener('submit', (e) => {
     e.preventDefault();
-    if (!isHubUnlocked()) return;
     const fd = new FormData(e.target);
     patchState((s) => {
       s.payroll = s.payroll || [];
@@ -881,7 +948,6 @@ function wireExpenses() {
   });
   document.getElementById('formRent')?.addEventListener('submit', (e) => {
     e.preventDefault();
-    if (!isHubUnlocked()) return;
     const fd = new FormData(e.target);
     patchState((s) => {
       s.rent = s.rent || [];
@@ -896,7 +962,6 @@ function wireExpenses() {
   });
   document.getElementById('formExpense')?.addEventListener('submit', (e) => {
     e.preventDefault();
-    if (!isHubUnlocked()) return;
     const { y, m } = getYM();
     const key = periodKey(y, m);
     const fd = new FormData(e.target);
@@ -918,8 +983,7 @@ function wireExpenses() {
     e.target.reset();
   });
 
-  document.getElementById('panel-datahub')?.addEventListener('click', (e) => {
-    if (!isHubUnlocked()) return;
+  document.getElementById('panel-operations')?.addEventListener('click', (e) => {
     const t = e.target;
     if (t.matches('[data-del-payroll]')) {
       const id = t.getAttribute('data-del-payroll');
@@ -942,6 +1006,10 @@ function wireExpenses() {
       });
       setDataSourceMeta({ kind: 'manual', format: null, label: 'Удаление расхода' });
     }
+  });
+
+  document.getElementById('panel-settings')?.addEventListener('click', (e) => {
+    const t = e.target;
     if (t.matches('[data-restore-backup]')) {
       const id = t.getAttribute('data-restore-backup');
       if (id && confirm('Восстановить данные из этой резервной копии? Текущее состояние будет заменено.')) {
@@ -958,7 +1026,6 @@ function wireExpenses() {
 function wireCatalog() {
   document.getElementById('formCatalog')?.addEventListener('submit', (e) => {
     e.preventDefault();
-    if (!isHubUnlocked()) return;
     const fd = new FormData(e.target);
     const newId = uid('cat');
     patchState((s) => {
@@ -979,8 +1046,7 @@ function wireCatalog() {
     e.target.reset();
   });
 
-  document.getElementById('panel-datahub')?.addEventListener('change', (e) => {
-    if (!isHubUnlocked()) return;
+  document.getElementById('panel-catalog')?.addEventListener('change', (e) => {
     const t = e.target;
     const id =
       t.getAttribute('data-cat-name') ||
@@ -1003,8 +1069,7 @@ function wireCatalog() {
     setDataSourceMeta({ kind: 'manual', format: null, label: 'Правка справочника' });
   });
 
-  document.getElementById('panel-datahub')?.addEventListener('click', (e) => {
-    if (!isHubUnlocked()) return;
+  document.getElementById('panel-catalog')?.addEventListener('click', (e) => {
     if (e.target.matches('[data-del-catalog]')) {
       const id = e.target.getAttribute('data-del-catalog');
       patchState((s) => {
@@ -1019,20 +1084,7 @@ function wireCatalog() {
   });
 }
 
-function wireDataHub() {
-  document.getElementById('btnHubUnlock')?.addEventListener('click', () => {
-    const code = window.prompt('Код доступа к разделу редактирования (по умолчанию: 0000):', '');
-    if (code === null) return;
-    if (code === '0000' || code === '') {
-      sessionStorage.setItem(HUB_UNLOCK_KEY, '1');
-      updateHubLockUi();
-      refresh();
-      showToast('Режим редактирования включён на эту сессию браузера.');
-    } else {
-      showToast('Неверный код.', 'error');
-    }
-  });
-
+function wireSettings() {
   document.getElementById('btnReloadSource')?.addEventListener('click', () => {
     if (!confirm('Подтянуть данные заново из localStorage этого браузера? Несохранённые на другой вкладке изменения не подхватятся.')) return;
     if (reloadStateFromDisk()) {
@@ -1042,18 +1094,16 @@ function wireDataHub() {
     }
   });
 
-  document.getElementById('btnSaveIntegrations')?.addEventListener('click', () => {
-    if (!isHubUnlocked()) {
-      showToast('Сначала войдите в режим редактирования.', 'error');
-      return;
-    }
-    if (!confirm('Сохранить ключи и заметки интеграций в этом браузере?')) return;
+  document.getElementById('btnSaveSettings')?.addEventListener('click', () => {
+    if (!confirm('Сохранить настройки и ключи в этом браузере (localStorage)?')) return;
     const g = document.getElementById('intGoogleKey')?.value ?? '';
     const m = document.getElementById('intMoiskladKey')?.value ?? '';
     const c = document.getElementById('intCrmKey')?.value ?? '';
     const n = document.getElementById('intOneCNotes')?.value ?? '';
     const tax = Math.max(0, Math.min(100, Number(document.getElementById('settingTaxRate')?.value) || 0));
     const cash = Math.max(0, Number(document.getElementById('settingCurrentCash')?.value) || 0);
+    const currency = document.getElementById('settingCurrency')?.value || 'RUB';
+    const sessionPin = String(document.getElementById('settingSessionPin')?.value ?? '0000').trim() || '0000';
     patchState((s) => {
       s.integrations = {
         googleSheetsApiKey: String(g),
@@ -1065,10 +1115,46 @@ function wireDataHub() {
         ...(s.settings || {}),
         taxRatePct: tax,
         currentCash: cash,
+        currency: ['USD', 'EUR', 'RUB'].includes(currency) ? currency : 'RUB',
+        sessionPin,
       };
     });
-    setDataSourceMeta({ kind: 'settings', format: null, label: 'Настройки интеграций' });
-    showToast('Настройки интеграций сохранены.');
+    setDataSourceMeta({ kind: 'settings', format: null, label: 'Настройки приложения' });
+    showToast('Настройки сохранены в localStorage.');
+  });
+}
+
+function setImportModalOpen(open) {
+  const m = document.getElementById('modalImport');
+  if (!m) return;
+  m.classList.toggle('hidden', !open);
+}
+
+function wireImportModal() {
+  document.getElementById('btnOpenImportModal')?.addEventListener('click', () => setImportModalOpen(true));
+  document.getElementById('btnModalImportClose')?.addEventListener('click', () => setImportModalOpen(false));
+  document.getElementById('modalImport')?.addEventListener('click', (e) => {
+    if (e.target.id === 'modalImport') setImportModalOpen(false);
+  });
+  document.getElementById('btnModalImportExcel')?.addEventListener('click', () => {
+    setImportModalOpen(false);
+    document.getElementById('importCatalogFile')?.click();
+  });
+  document.getElementById('btnModalSyncSheets')?.addEventListener('click', () => {
+    patchState((s) => {
+      s.settings = s.settings || {};
+      s.settings.lastSheetsSyncAt = new Date().toISOString();
+    });
+    setDataSourceMeta({ kind: 'sheets', format: null, label: 'Синхронизация Google Sheets (демо)' });
+    setImportModalOpen(false);
+    showToast('Метка синхронизации Google Sheets обновлена.');
+  });
+}
+
+function wireAddOperation() {
+  document.getElementById('btnAddOperation')?.addEventListener('click', () => {
+    document.getElementById('anchorNewExpense')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    document.getElementById('expenseDate')?.focus();
   });
 }
 
@@ -1089,10 +1175,6 @@ function wireWhatIf() {
 
 function wireReset() {
   document.getElementById('btnResetDemo')?.addEventListener('click', () => {
-    if (!isHubUnlocked()) {
-      showToast('Сначала откройте «Интеграции» и войдите в режим редактирования.', 'error');
-      return;
-    }
     if (confirm('Сбросить все сохранённые данные и вернуть демо?')) {
       localStorage.removeItem(STORAGE_KEY);
       resetToDemo();
@@ -1103,10 +1185,6 @@ function wireReset() {
 
 function wirePersist() {
   document.getElementById('btnPersist')?.addEventListener('click', async () => {
-    if (!isHubUnlocked()) {
-      showToast('Сначала войдите в режим редактирования.', 'error');
-      return;
-    }
     if (!confirm('Сохранить текущее состояние в localStorage этого браузера?')) return;
     await dataRepository.flush();
     showToast('Данные сохранены в этом браузере (localStorage).');
@@ -1121,20 +1199,12 @@ const IMPORT_KIND_LABELS = {
 };
 
 function wireImportCatalog() {
-  const btn = document.getElementById('btnImportCatalog');
   const input = document.getElementById('importCatalogFile');
-  if (!btn || !input) return;
-  btn.addEventListener('click', () => {
-    if (!isHubUnlocked()) {
-      showToast('Сначала войдите в режим редактирования.', 'error');
-      return;
-    }
-    input.click();
-  });
+  if (!input) return;
   input.addEventListener('change', async () => {
     const file = input.files?.[0];
     input.value = '';
-    if (!file || !isHubUnlocked()) return;
+    if (!file) return;
     try {
       const rows = await parseImportFile(file);
       if (!rows.length) {
@@ -1169,7 +1239,9 @@ wirePeriod();
 wireSales();
 wireExpenses();
 wireCatalog();
-wireDataHub();
+wireSettings();
+wireImportModal();
+wireAddOperation();
 wireWhatIf();
 wireReset();
 wirePersist();
@@ -1179,7 +1251,6 @@ const loaded = loadFromStorage();
 if (!loaded && !localStorage.getItem(STORAGE_KEY)) persist();
 else if (loaded) persist();
 
-updateHubLockUi();
 setTab(activeTab);
 
 window.__profitAppReady = true;

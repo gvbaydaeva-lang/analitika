@@ -44,6 +44,9 @@ export function defaultBusinessSettings() {
     currentCash: 300000,
     whatIfPricePct: 0,
     whatIfMarketingPct: 0,
+    currency: 'RUB',
+    lastSheetsSyncAt: null,
+    sessionPin: '0000',
   };
 }
 
@@ -116,7 +119,7 @@ export function createSeedState() {
   }
 
   return {
-    version: 5,
+    version: 6,
     catalog,
     months,
     payroll,

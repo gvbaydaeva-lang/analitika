@@ -243,6 +243,74 @@ export function computeWithPrev(state, y, m) {
   };
 }
 
+/** 30 календарных дней от 1-го числа выбранного месяца (при нехватке дней — переход на следующий месяц). */
+export function thirtyDatesFromMonthStart(y, m) {
+  const out = [];
+  let cy = y;
+  let cm = m;
+  let cd = 1;
+  for (let i = 0; i < 30; i += 1) {
+    const dim = new Date(cy, cm, 0).getDate();
+    if (cd > dim) {
+      cd = 1;
+      cm += 1;
+      if (cm > 12) {
+        cm = 1;
+        cy += 1;
+      }
+    }
+    out.push(`${cy}-${String(cm).padStart(2, '0')}-${String(cd).padStart(2, '0')}`);
+    cd += 1;
+  }
+  return out;
+}
+
+/**
+ * Матрица платежного календаря: строки — категории + ФОТ + аренда + каналы; столбцы — 30 дней.
+ * В ячейках — суммы плановых/фактических списаний по дате (строки журнала) или равномерное распределение ФОТ/аренды/каналов.
+ */
+export function buildPaymentCalendarMatrix(state, y, m) {
+  const dates = thirtyDatesFromMonthStart(y, m);
+  const dim = computeMonth(state, y, m);
+  const dailyPayroll = dim.payrollTotal / 30;
+  const dailyRent = dim.rentTotal / 30;
+  const dailyChannels = dim.marketingChannels / 30;
+
+  const rowDefs = [
+    ...EXPENSE_CATEGORIES.map((c) => ({ id: c.id, label: c.label, type: 'lines' })),
+    { id: 'channels', label: 'Реклама (каналы)', type: 'flat' },
+    { id: 'payroll', label: 'ФОТ (равно по дням)', type: 'flat' },
+    { id: 'rent', label: 'Аренда (равно по дням)', type: 'flat' },
+  ];
+
+  const rows = rowDefs.map((def) => {
+    const cells = dates.map((iso) => {
+      if (def.type === 'flat') {
+        if (def.id === 'channels') return dailyChannels;
+        if (def.id === 'payroll') return dailyPayroll;
+        if (def.id === 'rent') return dailyRent;
+      }
+      return (state.expenseLines || [])
+        .filter((e) => e.opDate === iso && e.category === def.id)
+        .reduce((s, e) => s + (Number(e.amount) || 0), 0);
+    });
+    return { id: def.id, label: def.label, cells };
+  });
+
+  const dailyTotal = dates.map((_, col) => rows.reduce((s, r) => s + (Number(r.cells[col]) || 0), 0));
+  const cash0 = Number(state.settings?.currentCash) || 0;
+  const balances = [];
+  const gapCols = [];
+  let bal = cash0;
+  for (let i = 0; i < 30; i += 1) {
+    bal -= dailyTotal[i];
+    balances.push(bal);
+    gapCols.push(bal < 0);
+  }
+
+  return { dates, dayLabels: dates.map((d) => d.slice(8)), rows, dailyTotal, balances, gapCols };
+}
+
 export function cashProjection30d(state, fromDate = new Date()) {
   const start = new Date(fromDate);
   start.setHours(0, 0, 0, 0);

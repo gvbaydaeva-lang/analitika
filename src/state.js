@@ -66,7 +66,14 @@ function migrateParsed(parsed) {
     parsed.settings = parsed.settings || defaultBusinessSettings();
     parsed.version = 5;
   }
-  if (parsed.version !== 5) return null;
+  if (parsed.version === 5) {
+    parsed.settings = parsed.settings || defaultBusinessSettings();
+    parsed.settings.currency = parsed.settings.currency || 'RUB';
+    if (parsed.settings.lastSheetsSyncAt === undefined) parsed.settings.lastSheetsSyncAt = null;
+    parsed.settings.sessionPin = parsed.settings.sessionPin || '0000';
+    parsed.version = 6;
+  }
+  if (parsed.version !== 6) return null;
   if (!parsed.dataSource) parsed.dataSource = defaultDataSource();
   if (!parsed.integrations) parsed.integrations = defaultIntegrations();
   if (!parsed.settings) parsed.settings = defaultBusinessSettings();
